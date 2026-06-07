@@ -22,6 +22,7 @@ namespace Nunam.Core.Entities
         public string? Description { get; set; }
         public string? Metadata { get; set; }
 
+        public byte[]? PreviewImage { get; set; }
         public Vector? Embedding { get; set; }
         public NpgsqlTsVector? Fts { get; set; }
     }
