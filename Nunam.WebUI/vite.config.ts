@@ -1,10 +1,19 @@
+import path from 'node:path';
 import { defineConfig } from 'vite';
-import plugin from '@vitejs/plugin-react';
+import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
 
-// https://vitejs.dev/config/
+// The dev server proxies /api to the API so the browser sees one origin, as it will behind the
+// production reverse proxy.
 export default defineConfig({
-    plugins: [plugin()],
+    plugins: [react(), tailwindcss()],
+    resolve: {
+        alias: { '@': path.resolve(__dirname, './src') },
+    },
     server: {
         port: 54211,
-    }
-})
+        proxy: {
+            '/api': process.env.NUNAM_API_URL ?? 'http://localhost:5033',
+        },
+    },
+});
