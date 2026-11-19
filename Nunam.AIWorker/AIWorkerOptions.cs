@@ -31,5 +31,8 @@ namespace Nunam.AIWorker
         /// killed) and is returned to the queue. Keep it well above the slowest describe call.
         /// </summary>
         public int StaleJobMinutes { get; set; } = 30;
+
+        /// <summary>Finished jobs are deleted this many days after completing.</summary>
+        public int KeepDoneJobsDays { get; set; } = 7;
     }
 }

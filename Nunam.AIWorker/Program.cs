@@ -23,6 +23,7 @@ builder.Services.AddNunamAI(builder.Configuration);
 // Queue consumers.
 builder.Services.AddHostedService<DescribeWorker>();
 builder.Services.AddHostedService<EmbedWorker>();
+builder.Services.AddHostedService<JobCleanupWorker>();
 
 var host = builder.Build();
 host.Run();
