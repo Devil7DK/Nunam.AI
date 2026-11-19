@@ -10,14 +10,14 @@ namespace Nunam.Core.AI
     /// </summary>
     public interface IAIInferenceService
     {
-        /// <summary>Embed a single text into a pgvector-ready vector.</summary>
-        Task<Vector> EmbedAsync(string text, CancellationToken cancellationToken = default);
+        /// <summary>Embed a search query, with the configured query prefix.</summary>
+        Task<Vector> EmbedQueryAsync(string query, CancellationToken cancellationToken = default);
 
         /// <summary>
-        /// Embed many texts in one request. Order of results matches the input.
-        /// Used by the batched Embed worker.
+        /// Embed many indexed texts in one request, with the configured document prefix. Order of
+        /// results matches the input.
         /// </summary>
-        Task<IReadOnlyList<Vector>> EmbedAsync(
+        Task<IReadOnlyList<Vector>> EmbedDocumentsAsync(
             IReadOnlyList<string> texts, CancellationToken cancellationToken = default);
 
         /// <summary>

@@ -51,6 +51,16 @@ namespace Nunam.Core.AI
         /// <summary>Embedding dimensionality; must match the <c>vector(N)</c> column. nomic-embed-text = 768.</summary>
         public int EmbeddingDimensions { get; set; } = 768;
 
+        /// <summary>
+        /// Prepended to indexed text before embedding. nomic-embed-text is trained with task prefixes and
+        /// retrieves noticeably worse without them; set both prefixes to empty for models that don't use any.
+        /// Changing this invalidates every stored vector: re-embed all files.
+        /// </summary>
+        public string EmbeddingDocumentPrefix { get; set; } = "search_document: ";
+
+        /// <summary>Prepended to search queries before embedding. Pairs with <see cref="EmbeddingDocumentPrefix"/>.</summary>
+        public string EmbeddingQueryPrefix { get; set; } = "search_query: ";
+
         /// <summary>Default instruction sent alongside an image when no per-call prompt is given.</summary>
         public string DescribePrompt { get; set; } =
             "Describe this image in detail for a search index. Mention any visible text, " +

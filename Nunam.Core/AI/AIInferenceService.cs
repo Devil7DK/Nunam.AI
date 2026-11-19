@@ -17,24 +17,21 @@ namespace Nunam.Core.AI
     {
         private readonly AIOptions _options = options.Value;
 
-        public async Task<Vector> EmbedAsync(string text, CancellationToken cancellationToken = default)
+        public async Task<Vector> EmbedQueryAsync(string query, CancellationToken cancellationToken = default)
         {
-            var embeddings = await embeddingGenerator.GenerateAsync(
-                [text],
-                new EmbeddingGenerationOptions { ModelId = _options.EmbeddingModel },
-                cancellationToken);
-
-            return new Vector(embeddings[0].Vector);
+            var vectors = await EmbedAsync([_options.EmbeddingQueryPrefix + query], cancellationToken);
+            return vectors[0];
         }
 
-        public async Task<IReadOnlyList<Vector>> EmbedAsync(
-            IReadOnlyList<string> texts, CancellationToken cancellationToken = default)
-        {
-            if (texts.Count == 0)
-            {
-                return [];
-            }
+        public Task<IReadOnlyList<Vector>> EmbedDocumentsAsync(
+            IReadOnlyList<string> texts, CancellationToken cancellationToken = default) =>
+            texts.Count == 0
+                ? Task.FromResult<IReadOnlyList<Vector>>([])
+                : EmbedAsync([.. texts.Select(t => _options.EmbeddingDocumentPrefix + t)], cancellationToken);
 
+        private async Task<IReadOnlyList<Vector>> EmbedAsync(
+            IReadOnlyList<string> texts, CancellationToken cancellationToken)
+        {
             var embeddings = await embeddingGenerator.GenerateAsync(
                 texts,
                 new EmbeddingGenerationOptions { ModelId = _options.EmbeddingModel },

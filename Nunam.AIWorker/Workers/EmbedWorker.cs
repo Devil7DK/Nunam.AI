@@ -72,7 +72,7 @@ namespace Nunam.AIWorker.Workers
 
             try
             {
-                var vectors = await ai.EmbedAsync([.. batch.Select(b => b.Input)], cancellationToken);
+                var vectors = await ai.EmbedDocumentsAsync([.. batch.Select(b => b.Input)], cancellationToken);
 
                 for (var i = 0; i < batch.Count; i++)
                 {
