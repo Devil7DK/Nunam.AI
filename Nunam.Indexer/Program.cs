@@ -1,5 +1,4 @@
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Hosting.WindowsServices;
 using Nunam.Core.Data;
 using Nunam.Core.Jobs;
 using Nunam.Indexer;
@@ -7,11 +6,12 @@ using Nunam.Indexer.Indexing;
 using Nunam.Indexer.Parsing;
 using Nunam.Indexer.Workers;
 
-// A Windows service starts in System32; config files and natives live next to the executable.
+// Config files live next to the executable, and a service doesn't start there (a Windows service
+// starts in System32), so the content root is the executable's folder rather than the current one.
 var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings
 {
     Args = args,
-    ContentRootPath = WindowsServiceHelpers.IsWindowsService() ? AppContext.BaseDirectory : null,
+    ContentRootPath = AppContext.BaseDirectory,
 });
 
 // Per-machine settings and secrets (watch paths, DB password, Syncfusion key) for installs that
