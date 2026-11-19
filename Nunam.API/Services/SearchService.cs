@@ -77,10 +77,11 @@ namespace Nunam.API.Services
             await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
             if (useSemantic)
             {
+                // SET takes no bind parameters; the value is a clamped integer.
                 var efSearch = Math.Clamp(_options.CandidatesPerSide, 40, 1000);
-                await db.Database.ExecuteSqlRawAsync(
-                    $"SET LOCAL hnsw.ef_search = {efSearch}; SET LOCAL hnsw.iterative_scan = relaxed_order",
-                    cancellationToken);
+                var settings = FormattableString.Invariant(
+                    $"SET LOCAL hnsw.ef_search = {efSearch}; SET LOCAL hnsw.iterative_scan = relaxed_order");
+                await db.Database.ExecuteSqlRawAsync(settings, cancellationToken);
             }
 
             var rows = await db.Database
