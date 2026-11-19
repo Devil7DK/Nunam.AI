@@ -747,10 +747,12 @@ sc start Nunam.Indexer
 ### Phase 2 — Parse Worker (`Nunam.Indexer`, runs per machine)
 - [x] Implement `ParseWorker` (polls `IndexJob WHERE Kind=Parse AND Status=Pending` for **this machine only**, claims via `FOR UPDATE SKIP LOCKED`)
 - [x] Implement `ScanWorker` (startup crawl; skips files unchanged by size + mtime) and `WatcherWorker` (FileSystemWatcher, 2 s debounce → INSERT `IndexJob(Kind=Parse)`); `MachineInitializer` upserts this host's `Machine` row; `PathFilter` exclude patterns use `/` and match on Windows + Linux
-- [ ] Implement `PdfParser` using Syncfusion.PDF
-- [ ] Implement `WordParser` using Syncfusion.DocIO
-- [ ] Implement `ExcelParser` using Syncfusion.XlsIO
-- [ ] Implement `PowerPointParser` using Syncfusion.Presentation
+- [x] Implement `PdfParser` using Syncfusion.PDF — text of every page + page count/title/author; under 50 chars of text means a scan, so page 1 is rendered to PNG (`Syncfusion.PdfToImageConverter.Net`, PDFium) and queued for Describe; password-protected PDFs get `{"encrypted": true}` metadata and no content
+- [x] Implement `WordParser` using Syncfusion.DocIO — `.doc/.docx/.docm/.dot/.dotx/.dotm/.rtf`, text + title/author/subject/word count
+- [x] Implement `ExcelParser` using Syncfusion.XlsIO — `.xls/.xlsx/.xlsm/.xltx/.xltm`, sheet names + displayed cell text, one row per line
+- [x] Implement `PowerPointParser` using Syncfusion.Presentation — `.pptx` family only (Syncfusion can't open binary `.ppt`; it falls back to filename-only), shape/group/table text + speaker notes
+- [x] Cap stored content at `MaxContentChars` (500 000) — the FTS trigger's `to_tsvector` fails above 1 MB — and strip NULs centrally in `ParseWorker`
+- [x] Register the Syncfusion license at Indexer startup from `Syncfusion:LicenseKey` (see §14)
 - [ ] Implement `ImageParser` (EXIF via MetadataExtractor + OCR via Syncfusion.OCR) — *partial: stores the image as `PreviewImage` (≤ `MaxPreviewMb`) and queues Describe; EXIF + OCR not yet*
 - [x] Implement `TextParser` — plain text / source / markup read as UTF-8 content (NULs stripped)
 - [ ] Implement `AudioParser` using TagLibSharp
@@ -804,7 +806,7 @@ sc start Nunam.Indexer
 | 3 | Should embedding be regenerated on every file change? | Yes, if content hash changes |
 | 4 | Authentication for the web UI? | None initially (LAN-only), add basic auth in Phase 5 if needed |
 | 5 | Should thumbnails be stored in DB or generated on demand? | Generated on demand and cached in memory |
-| 6 | What to do with encrypted PDFs? | Mark as `description = "Encrypted document"`, skip content |
+| 6 | What to do with encrypted PDFs? | Skip content, set `metadata = {"encrypted": true}`; the file stays searchable by name. `Description` is left to the AI worker |
 | 7 | Should the Indexer write directly to DB or via API? | **Direct DB write** — avoids HTTP overhead during bulk indexing, indexer uses a dedicated low-privilege `nunam_indexer` DB user (INSERT/UPDATE/SELECT only). API uses a separate `nunam_api` read-only user. AIWorker uses `nunam_aiworker` with INSERT/UPDATE/SELECT on `index_jobs` + `files` only. |
 | 8 | One `IndexJob` table or many? | **One table, `Kind` column** discriminates Parse / Describe / Embed. Same shape, single set of migrations, per-kind queues fall out of `WHERE Kind=...`. Inspired by Immich's BullMQ queue separation but adapted to Postgres-as-queue. |
 | 9 | Where does Ollama live? | **Gaming PC** (the only machine with a GPU). AIWorker calls it over LAN. Tolerates intermittent availability via Postgres-backed retry (jobs stay `Pending` while Ollama is down). |
@@ -838,12 +840,18 @@ sc start Nunam.Indexer
 
 ### Nunam.Indexer
 ```xml
-<PackageReference Include="Syncfusion.PDF.Net.Core" Version="*" />
-<PackageReference Include="Syncfusion.DocIO.Net.Core" Version="*" />
-<PackageReference Include="Syncfusion.XlsIO.Net.Core" Version="*" />
-<PackageReference Include="Syncfusion.Presentation.Net.Core" Version="*" />
-<PackageReference Include="Syncfusion.OCR.Net.Core" Version="*" />
-<PackageReference Include="MimeDetective" Version="*" />
+<!-- Installed (all Syncfusion packages must share one version; the license key is per major version) -->
+<PackageReference Include="Syncfusion.Licensing" Version="35.2.12" />
+<PackageReference Include="Syncfusion.Pdf.Net.Core" Version="35.2.12" />
+<PackageReference Include="Syncfusion.PdfToImageConverter.Net" Version="35.2.12" />
+<PackageReference Include="Syncfusion.DocIO.Net.Core" Version="35.2.12" />
+<PackageReference Include="Syncfusion.XlsIO.Net.Core" Version="35.2.12" />
+<PackageReference Include="Syncfusion.Presentation.Net.Core" Version="35.2.12" />
+<PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="4.150.1" />
+<PackageReference Include="Mime-Detective" Version="25.8.1" />
+
+<!-- Planned -->
+<PackageReference Include="Syncfusion.PDF.OCR.Net.Core" Version="35.2.12" />
 <PackageReference Include="MetadataExtractor" Version="*" />
 <PackageReference Include="TagLibSharp" Version="*" />
 <PackageReference Include="FFMpegCore" Version="*" />
@@ -890,3 +898,36 @@ sc start Nunam.Indexer
 *2026-06-04 — Adopted flat repo layout (projects at root, no `src/` folder); fixed project name casing (`Nunam.API`, `Nunam.WebUI`); updated EF migration and docker-compose paths to match.*
 
 *2026-06-04 — Added EF Core ORM; added MimeDetective for magic-byte file type detection; decided Indexer writes directly to DB using a dedicated low-privilege user.*
+
+---
+
+## 14. Development Environment & Third-Party Setup
+
+How the pieces outside the repo were set up, so they can be rebuilt. No secret values here.
+
+### Dev database (Linux workstation)
+- Docker container `nunam-dev-postgres` (image `pgvector/pgvector:pg18`) on `127.0.0.1:5442`, database `nunam_dev`, user `postgres` / password `postgres`. Port 5432 on this machine belongs to another project.
+- Created with:
+  ```bash
+  docker run -d --name nunam-dev-postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=nunam_dev \
+    -p 127.0.0.1:5442:5432 pgvector/pgvector:pg18
+  docker exec nunam-dev-postgres psql -U postgres -d nunam_dev -c 'CREATE EXTENSION IF NOT EXISTS vector;'
+  dotnet tool install --global dotnet-ef --version 10.0.8
+  dotnet ef database update --project Nunam.Core --startup-project Nunam.Indexer
+  ```
+- `appsettings.Development.json` (Indexer, AIWorker) and `NunamDbContextFactory` point at this container.
+
+### Dev AI backend
+- Ollama on `localhost:11434` with `qwen2.5vl:7b` (vision) and `nomic-embed-text` (pulled with `ollama pull nomic-embed-text`). The Development config still targets LM Studio; override per run with `AI__Provider=Ollama AI__BaseUrl=http://localhost:11434 AI__ChatModel=qwen2.5vl:7b AI__EmbeddingModel=nomic-embed-text`.
+
+### Syncfusion (document parsing)
+- **License:** Essential Studio Enterprise Edition — **Community license** on the syncfusion.com account.
+- **Key generated (2026-11-19):** syncfusion.com → Account → *License & Downloads* → *Downloads & Keys* → **Get License Key**, with *Version* `35.x.x`, *Platform* **Document SDK** (covers PDF, DocIO, XlsIO, Presentation, OCR), *Project* `Nunam`. Since v31.1.17 keys are issued per product (UI Edition, Document SDK, DOCX/PDF/Spreadsheet Editor SDK), not per platform.
+- **The key only works for major version 35.** Upgrading the packages to 36+ needs a new key generated the same way.
+- **Where the key lives:** never in git.
+  - Dev: `dotnet user-secrets set "Syncfusion:LicenseKey" "<key>" --project Nunam.Indexer` (stored under `~/.microsoft/usersecrets/<UserSecretsId>/secrets.json` on Linux, `%APPDATA%\Microsoft\UserSecrets\` on Windows; set it again on each machine).
+  - Deployed indexers: environment variable `Syncfusion__LicenseKey`.
+  - Without a key the Indexer logs a warning and Syncfusion runs in evaluation mode.
+- **Packages:** come from nuget.org; no installer download is needed. The Linux "Download for Linux" installer on the account page isn't used.
+- **Linux native bits:** `Syncfusion.PdfToImageConverter.Net` ships PDFium for linux/win/osx itself, but its SkiaSharp dependency needs `SkiaSharp.NativeAssets.Linux.NoDependencies` pinned to the same SkiaSharp version Syncfusion resolves (4.150.1 for 35.2.12). Check `obj/project.assets.json` for the SkiaSharp version when bumping Syncfusion.
+- **Verified** with generated samples (text PDF, image-only PDF, password-protected PDF, .docx, .xlsx, .pptx): content and metadata extracted with no evaluation watermark text; the image-only PDF was rendered, described by the vision model, then embedded.
