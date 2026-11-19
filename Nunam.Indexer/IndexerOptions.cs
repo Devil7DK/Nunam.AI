@@ -49,6 +49,8 @@ namespace Nunam.Indexer
         /// <summary>Scanned PDFs are OCRed up to this many pages.</summary>
         public int OcrMaxPdfPages { get; set; } = 20;
 
+        /// <summary>Folder holding <c>ffmpeg</c>/<c>ffprobe</c>; when unset they're looked up on PATH.</summary>
+        public string? FFmpegBinaryFolder { get; set; }
 
         /// <summary>
         /// Extracted content is cut to this many characters. Postgres refuses a tsvector over 1 MB,
