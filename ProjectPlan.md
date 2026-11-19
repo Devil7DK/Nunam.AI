@@ -537,80 +537,75 @@ Any worker that hits an error marks its own job `Failed` with `Stage` left at th
 
 ## 7. API Endpoints
 
+Minimal API in `Nunam.API` (`Endpoints/`, `Services/`, `Contracts/`). JSON is camelCase, enums are camelCase strings (`"document"`, `"hybrid"`). Errors are RFC 9110 problem details; bad query values return 400 with the valid choices listed.
+
 ### Search
 
 ```
 GET /api/search
-  ?q=<query>
-  &mode=hybrid|keyword|semantic       (default: hybrid)
-  &type=document|image|audio|video    (optional filter)
-  &machine=<machine_name>             (optional filter)
-  &ext=.pdf,.docx                     (optional filter)
-  &from=2024-01-01                    (optional date filter)
-  &to=2024-12-31
-  &limit=20
-  &offset=0
+  ?q=<query>                          (empty → browse: newest first, filters still apply)
+  &mode=hybrid|keyword|semantic       (default: hybrid; case-insensitive)
+  &type=document|image|audio|video|other
+  &machine=<machine name>             (case-insensitive)
+  &ext=.pdf,docx                      (leading dot optional)
+  &from=2024-01-01&to=2024-12-31      (file modified date, both inclusive, UTC days)
+  &limit=20 (1–100) &offset=0
 
 Response:
 {
-  "total": 142,
+  "total": 3,                         // fused hits (≤ 2 × Search:CandidatesPerSide)
+  "mode": "hybrid",
+  "semanticUsed": true,               // false when the AI backend was unreachable
+  "warning": null,                    // set when hybrid fell back to keywords only
   "results": [
     {
-      "id": "uuid",
-      "filename": "land-deed-2023.pdf",
-      "path": "C:\\Users\\...",
-      "machine": "desktop",
-      "fileType": "document",
-      "extension": ".pdf",
-      "sizeBytes": 204800,
-      "modifiedAt": "2023-08-15T10:30:00Z",
-      "snippet": "...property situated at survey number 142...",
-      "description": "Land deed document for property at...",
-      "score": 0.94
+      "id": "uuid", "fileName": "scanned-bill.pdf", "path": "/…/scanned-bill.pdf",
+      "machine": "home-desktop", "fileType": "document", "extension": ".pdf",
+      "sizeBytes": 22764, "modifiedAt": "…",
+      "snippet": "\uE000Electricity\uE001 \uE000bill\uE001 due on 25 November …",
+      "description": "The image displays an electricity bill notice…",
+      "hasPreview": true,
+      "score": 0.0328,                // fused rank score; only meaningful for ordering
+      "similarity": 0.7972            // cosine similarity when the semantic side matched
     }
   ]
 }
 ```
 
-### Search Logic (Hybrid)
+Snippets mark matched words with U+E000 … U+E001 (private-use characters that don't occur in indexed text), so the UI highlights by splitting the string and never renders file content as HTML.
 
-Standard LINQ for simple queries; `FromSqlRaw` for the hybrid scored query where combining `ts_rank` and cosine distance in a weighted formula cannot be cleanly expressed in LINQ:
+### Search logic
 
-```csharp
-// 1. Embed the query
-var queryEmbedding = await _ollama.EmbedAsync("nomic-embed-text", query);
+One SQL statement (`SearchService`), built from CTEs:
 
-// 2. Simple vector-only search (EF Core LINQ — works natively with pgvector)
-var semantic = await _db.Files
-    .Where(f => type == null || f.FileType == type)
-    .OrderBy(f => f.Embedding!.CosineDistance(queryEmbedding))
-    .Take(limit)
-    .ToListAsync();
+1. **filtered** — ids passing type/machine/extension/date filters.
+2. **keyword** — full-text matches plus filename `ILIKE` matches (the FTS parser keeps `deed.txt` as one token, so filename substrings need `ILIKE`). Filename hits rank first, then `ts_rank_cd`. Keyword mode uses `websearch_to_tsquery` (all words, `"phrases"`, `-exclusions`); **hybrid matches any word** because hybrid queries are sentences and requiring every word misses most relevant files.
+3. **semantic** — nearest `Search:CandidatesPerSide` (200) embeddings, then only those within `Search:SemanticRelativeMargin` (0.08) of the best similarity. Cosine similarity has no absolute meaning across queries with nomic-embed-text (a right answer scored 0.54 for one query while noise scored 0.59 for another), so a fixed floor doesn't work; relative to the top hit it does.
+4. **fused** — reciprocal rank fusion, `1/(60 + keyword rank) + 1/(60 + semantic rank)`. Chosen over the originally planned `ts_rank × 0.4 + similarity × 0.6`: `ts_rank` values are ~0.01–0.1 while similarity is ~0.5–0.8, so a weighted sum is decided almost entirely by the semantic side.
+5. **page** — limit/offset, then `ts_headline` only for the returned rows.
 
-// 3. Hybrid search (weighted FTS + vector) — use FromSqlRaw
-var hybrid = await _db.Files
-    .FromSqlRaw("""
-        SELECT *,
-            ts_rank(fts, plainto_tsquery('english', {0})) * 0.4 +
-            (1 - (embedding <=> {1})) * 0.6 AS score
-        FROM files
-        WHERE ({2} IS NULL OR file_type = {2})
-          AND ({3}::uuid IS NULL OR machine_id = {3}::uuid)
-        ORDER BY score DESC
-        LIMIT {4} OFFSET {5}
-    """, query, queryEmbedding, type, machineId, limit, offset)
-    .ToListAsync();
+Query embedding uses the `search_query: ` prefix and documents use `search_document: ` (`AI:EmbeddingQueryPrefix` / `AI:EmbeddingDocumentPrefix`), as nomic-embed-text is trained. **Changing either prefix or the model means re-embedding every file:**
+```sql
+INSERT INTO index_jobs (id, machine_id, path, kind, status, stage, created, last_modified)
+SELECT gen_random_uuid(), machine_id, path, 'Embed', 'Pending', 'None', now(), now() FROM files;
 ```
 
-### Other Endpoints
+If the query can't be embedded within `Search:QueryEmbeddingTimeoutSeconds` (10), hybrid answers from keywords alone with a `warning`; semantic mode returns 503.
+
+### Other endpoints
 
 ```
-GET  /api/files/{id}           # File metadata
-GET  /api/files/{id}/preview   # Returns text snippet or thumbnail
-GET  /api/status               # Index stats: total files, last indexed, per machine
-GET  /api/machines             # List all indexed machines
-POST /api/index/trigger        # Manually trigger re-index for a path
+GET /api/files/{id}            # Details: metadata JSON, description, first 20 000 chars of content, hasPreview/hasEmbedding
+GET /api/files/{id}/preview    # Stored preview image (JPEG/PNG); ?size=256 returns a thumbnail (longer edge ≤ size, 32–1568)
+                               #   Thumbnails are made on demand and kept in an in-memory cache (64 MB); ETag + 304 supported
+GET /api/status                # Totals by type, described/embedded counts, job counts by kind/status, last 20 failures, machines
+GET /api/machines              # Machines with file count and last indexed time
+GET /healthz                   # 200 when the database is reachable
 ```
+
+`POST /api/index/trigger` (from the original plan) is **not implemented**: the API runs as the read-only `nunam_api` DB user (§12 #7). Re-indexing a path today = insert a `Parse` job, or touch the file so the watcher picks it up.
+
+CORS: `Cors:AllowedOrigins` (GET only); `*` allows any origin. Development allows `http://localhost:5173` (Vite).
 
 ---
 
@@ -771,13 +766,15 @@ sc start Nunam.Indexer
 - [x] Test on sample data — verified with Ollama (`qwen2.5vl:7b` + `nomic-embed-text`): image described then embedded, and a pgvector cosine query for "documents about property and land" ranks the land-deed text first
 
 ### Phase 3 — API
-- [ ] Implement hybrid search endpoint (`GET /api/search`)
-- [ ] Implement file metadata endpoint (`GET /api/files/{id}`)
-- [ ] Implement preview endpoint (`GET /api/files/{id}/preview`)
-- [ ] Implement status endpoint (`GET /api/status`)
-- [ ] Implement machines endpoint (`GET /api/machines`)
-- [ ] Add CORS for local network access
-- [ ] Test natural language queries end-to-end
+- [x] Implement hybrid search endpoint (`GET /api/search`) — keyword / semantic / hybrid (RRF) with type, machine, extension and date filters, highlighted snippets, browse mode for an empty query; falls back to keywords when the AI backend is down (§7)
+- [x] Implement file metadata endpoint (`GET /api/files/{id}`)
+- [x] Implement preview endpoint (`GET /api/files/{id}/preview`) — the stored preview, or an on-demand cached thumbnail with `?size=`; text lives in `/api/files/{id}` and search snippets
+- [x] Implement status endpoint (`GET /api/status`) — includes job counts and recent failures for the Phase 5 health view
+- [x] Implement machines endpoint (`GET /api/machines`)
+- [x] Add CORS for local network access — config-driven origin list
+- [x] Test natural language queries end-to-end — on the dev sample set: "documents about land or property" → the sale agreement and land deed; "when is the electricity bill due" → the scanned bill and bill photo; "family celebration video" → the birthday video; "photo from a holiday" → the holiday photo. Weak spot: audio is only embedded from its tags, so "music" barely separates the song from unrelated files
+- [x] Embed with nomic's `search_document:` / `search_query:` prefixes (needed re-embedding the dev set)
+- [ ] `POST /api/index/trigger` — not built; the API's DB user is read-only (see §7)
 
 ### Phase 4 — Frontend
 - [ ] Scaffold React + Vite + TypeScript + Tailwind + shadcn/ui
