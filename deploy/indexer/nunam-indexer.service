@@ -1,0 +1,21 @@
+# systemd unit for a Linux indexer (e.g. the homelab indexing mounted shares).
+#   dotnet publish Nunam.Indexer -c Release -r linux-x64 --self-contained false -o /opt/nunam/indexer
+#   cp deploy/indexer/appsettings.Local.example.json /opt/nunam/indexer/appsettings.Local.json   # edit it
+#   chmod 600 /opt/nunam/indexer/appsettings.Local.json && chown nunam: /opt/nunam/indexer/appsettings.Local.json
+#   cp deploy/indexer/nunam-indexer.service /etc/systemd/system/ && systemctl enable --now nunam-indexer
+[Unit]
+Description=Nunam Indexer
+After=network-online.target remote-fs.target
+Wants=network-online.target
+
+[Service]
+Type=notify
+User=nunam
+WorkingDirectory=/opt/nunam/indexer
+ExecStart=/opt/nunam/indexer/Nunam.Indexer
+Restart=on-failure
+RestartSec=30
+Environment=DOTNET_ENVIRONMENT=Production
+
+[Install]
+WantedBy=multi-user.target
