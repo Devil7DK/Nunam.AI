@@ -643,84 +643,18 @@ ollama pull llava:13b
 
 ---
 
-## 10. Deployment (docker-compose.yml)
+## 10. Deployment
+
+Step-by-step guides: **`docs/deployment.md`** (homelab stack) and **`docs/adding-a-machine.md`** (indexers).
 
 **Hardware split:**
-- **Homelab (i5-14600K, no discrete GPU)** — Postgres, API, UI, AIWorker. Always-on.
-- **Gaming PC (i9-13900KF + AMD RX 6600)** — Ollama only (LLaVA needs the GPU). Powered up intermittently. AIWorker is configured to point at `http://gaming-pc.lan:11434`; jobs sit `Pending` while the PC is off.
-- **Indexed machines** (desktop, laptop, possibly homelab itself for shares) — run `Nunam.Indexer` (ParseWorker) natively, not in Docker.
+- **Homelab** — Docker Compose (`docker/docker-compose.yml`): `postgres` (pgvector, Postgres 18, port published for indexers), `migrations` (one-shot EF bundle, runs as the owner role), `nunam-api` (read-only `nunam_api` login, not published), `nunam-ui` (nginx on `UI_PORT`, proxies `/api`), `nunam-aiworker` (`nunam_aiworker` login). Settings and passwords in `docker/.env` (template `docker/.env.example`, git-ignored).
+- **Gaming PC** — Ollama only, outside Compose (`OLLAMA_HOST=0.0.0.0:11434`). Jobs wait `Pending` while it's off.
+- **Indexed machines** — `Nunam.Indexer` natively: Windows service via `deploy/indexer/install-windows.ps1`, Linux via `deploy/indexer/nunam-indexer.service`. Per-machine settings and secrets in `appsettings.Local.json` next to the executable (template `deploy/indexer/appsettings.Local.example.json`, git-ignored); it overrides `appsettings.json`, environment variables override both. The content root is always the executable's folder.
 
-Services running on homelab via Docker Compose:
+Database logins are created by `docker/postgres/10-roles.sh` on first start of the volume: `nunam_indexer` and `nunam_aiworker` get SELECT/INSERT/UPDATE/DELETE, `nunam_api` SELECT only, all through default privileges on tables the owner creates.
 
-```yaml
-services:
-  postgres:
-    image: pgvector/pgvector:pg16
-    environment:
-      POSTGRES_DB: nunam
-      POSTGRES_USER: nunam
-      POSTGRES_PASSWORD: <password>
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
-    ports:
-      - "5432:5432"
-
-  ollama:
-    image: ollama/ollama
-    volumes:
-      - ollama_data:/root/.ollama
-    ports:
-      - "11434:11434"
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - capabilities: [gpu]   # remove if no GPU
-
-  nunam-api:
-    build:
-      context: ..                  # repo root, so Dockerfile can COPY Nunam.API/...
-      dockerfile: Nunam.API/Dockerfile
-    environment:
-      - ConnectionStrings__Postgres=Host=postgres;Database=nunam;Username=nunam;Password=<password>
-      - Nunam__OllamaUrl=http://ollama:11434
-    ports:
-      - "5000:8080"
-    depends_on:
-      - postgres
-      - ollama
-
-  nunam-ui:
-    build: ../Nunam.WebUI
-    environment:
-      - VITE_API_URL=http://homelab:5000
-    ports:
-      - "3000:80"
-    depends_on:
-      - nunam-api
-
-  nunam-aiworker:
-    build:
-      context: ..
-      dockerfile: Nunam.AIWorker/Dockerfile
-    environment:
-      - ConnectionStrings__Postgres=Host=postgres;Database=nunam;Username=nunam_aiworker;Password=<password>
-      - Nunam__OllamaUrl=http://gaming-pc.lan:11434
-    depends_on:
-      - postgres
-
-volumes:
-  pgdata:
-  ollama_data:
-```
-
-Indexer runs as a **native Windows service** on each machine (not Docker):
-```bash
-dotnet publish -c Release
-sc create Nunam.Indexer binPath="C:\...\Nunam.Indexer.exe"
-sc start Nunam.Indexer
-```
+**Verified 2026-11-20** with a throwaway Compose project on this machine: migrations applied (owner password containing quotes), roles and grants as above, `nunam_api` refused a DELETE, UI + API served through nginx, a published Linux indexer logged in as `nunam_indexer` and indexed, deleted and reconciled files, and search fell back to keywords with Ollama unreachable while AI jobs waited.
 
 ---
 
@@ -731,7 +665,7 @@ sc start Nunam.Indexer
 - [x] Install EF Core / pgvector NuGet packages in `Nunam.Core` (see §13)
 - [x] Implement EF Core entities (`Machine`, `IndexedFile`, `IndexJob` + `FileType`/`IndexJobKind`/`IndexJobStatus`/`IndexJobStage` enums) under `Nunam.Core/Entities`, inheriting from `EntityBase`
 - [x] Scaffold `Nunam.AIWorker` project (homelab AI-side worker — Describe + Embed) — skeleton `DescribeWorker` + `EmbedWorker` in `Workers/`, Dockerfile, `appsettings.json` shape, added to `Nunam.slnx`
-- [ ] Set up PostgreSQL + pgvector via Docker
+- [x] Set up PostgreSQL + pgvector via Docker — dev: container `nunam-dev-postgres` (§14); homelab: `docker/docker-compose.yml` (§10)
 - [x] Implement `NunamDbContext` with EF Core in Core (snake_case naming, enum-as-string conversions, HNSW + GIN + queue indexes, `TouchEntityInterceptor` for `LastModified`)
 - [x] Add initial EF Core migration (`Nunam.Core/Data/Migrations/20260605015843_InitialSchema.cs`) — `fts` trigger as raw SQL in `Up()`, `PreviewImage` column included, all snake_case
 - [x] Add `IDesignTimeDbContextFactory<NunamDbContext>` in Core so migrations can be generated/applied without wiring `AddDbContext` into a startup project's `Program.cs`
@@ -787,14 +721,13 @@ sc start Nunam.Indexer
 - Opening a file on its own machine: browsers block `file://` links from an `http://` page, so each result has **Copy path** instead (clipboard needs https or localhost; over plain LAN http it falls back to a prompt with the path selected)
 
 ### Phase 5 — Deployment & Hardening
-- [ ] Finalize `docker-compose.yml` for homelab
-- [ ] Configure Indexer as Windows service on desktop and laptop
-- [ ] Set up pgvector HNSW index tuning (ef_construction, m parameters)
-- [ ] Add re-index on file delete/move (FileSystemWatcher deleted/renamed events)
-- [ ] Add index health dashboard to UI (files per machine, last indexed, errors)
-- [ ] Document setup steps for adding a new machine
-
----
+- [x] Finalize `docker-compose.yml` for homelab — `docker/docker-compose.yml` + migrations bundle image + nginx UI image + per-service DB logins; Ollama left out (it lives on the GPU machine). Tested end to end on this machine (§10)
+- [ ] Configure Indexer as Windows service on desktop and laptop — *ready, not run*: hosting supports Windows services and systemd, `deploy/indexer/install-windows.ps1` publishes, installs and secures the settings file. Needs running on each Windows machine (untested on Windows so far)
+- [x] Set up pgvector HNSW index tuning — build parameters left at pgvector's defaults (`m=16`, `ef_construction=64`; ample recall for a home index). The real problem was query-time: an HNSW scan returns at most `hnsw.ef_search` rows (default 40), so semantic search silently capped at 40 candidates once the index is used. Search now sets `hnsw.ef_search` to `Search:CandidatesPerSide` and `hnsw.iterative_scan = relaxed_order` per transaction (verified on 20 000 vectors: 40 → 200)
+- [x] Add re-index on file delete/move — watcher handles deletes, renames and folders moved in or out (editor-style delete-then-rename saves keep the row); startup scan drops entries for files deleted while the indexer was off, but only under watch paths that currently exist, so an unplugged drive doesn't wipe its entries
+- [x] Purge finished jobs — the AI worker deletes `Done` jobs older than `AIWorker:KeepDoneJobsDays` (7) every hour; `Failed` jobs are kept
+- [x] Add index health dashboard to UI — clicking the status line opens per-machine counts and last activity, the job queue by stage and status, and the 20 most recent failures with their errors
+- [x] Document setup steps for adding a new machine — `docs/adding-a-machine.md`, `docs/deployment.md`
 
 ## 12. Open Questions / Decisions
 
