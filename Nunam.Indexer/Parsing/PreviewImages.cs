@@ -27,7 +27,7 @@ namespace Nunam.Indexer.Parsing
             var scale = Math.Min(1.0, (double)maxEdge / Math.Max(width, height));
             using var resized = scale < 1.0
                 ? image.Resize(
-                    new SKImageInfo((int)(width * scale), (int)(height * scale)),
+                    image.Info.WithSize((int)(width * scale), (int)(height * scale)),
                     new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.Linear))
                 : null;
 
@@ -51,7 +51,9 @@ namespace Nunam.Indexer.Parsing
             if (degrees == 0) return null;
 
             var swap = degrees != 180;
-            var rotated = new SKBitmap(swap ? bitmap.Height : bitmap.Width, swap ? bitmap.Width : bitmap.Height);
+            var rotated = new SKBitmap(bitmap.Info.WithSize(
+                swap ? bitmap.Height : bitmap.Width,
+                swap ? bitmap.Width : bitmap.Height));
             using var canvas = new SKCanvas(rotated);
             canvas.Translate(rotated.Width / 2f, rotated.Height / 2f);
             canvas.RotateDegrees(degrees);
