@@ -26,6 +26,7 @@ builder.Services.AddScoped<JobQueue>();
 // Machine identity + path filtering (resolved once, shared everywhere).
 builder.Services.AddSingleton<MachineContext>();
 builder.Services.AddSingleton<PathFilter>();
+builder.Services.AddSingleton<FileTree>();
 
 // Parsing pipeline. Registration order matters: specialized parsers first, fallback last.
 builder.Services.AddSingleton<FileTypeDetector>();

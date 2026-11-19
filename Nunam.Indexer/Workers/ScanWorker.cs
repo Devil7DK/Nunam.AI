@@ -8,13 +8,14 @@ namespace Nunam.Indexer.Workers
 {
     /// <summary>
     /// One-shot startup crawl of every configured watch path: enqueues a Parse job for each file
-    /// that is new or has changed since it was last indexed (by size + modified time). Unchanged
-    /// files and paths that already have a pending Parse job are skipped, so restarts are cheap.
+    /// that is new or has changed since it was last indexed (by size + modified time), then drops
+    /// entries for files deleted while the indexer wasn't watching. Unchanged files and paths that
+    /// already have a pending Parse job are skipped, so restarts are cheap.
     /// </summary>
     public class ScanWorker(
         IServiceScopeFactory scopeFactory,
         MachineContext machine,
-        PathFilter pathFilter,
+        FileTree fileTree,
         IOptions<IndexerOptions> options,
         ILogger<ScanWorker> logger) : BackgroundService
     {
@@ -43,17 +44,18 @@ namespace Nunam.Indexer.Workers
                 enqueued += await ScanRootAsync(root, stoppingToken);
             }
 
-            logger.LogInformation("Startup scan complete. Enqueued {Count} Parse job(s).", enqueued);
+            var removed = await RemoveMissingAsync(stoppingToken);
+            logger.LogInformation(
+                "Startup scan complete. Enqueued {Count} Parse job(s), removed {Removed} missing file(s).", enqueued, removed);
         }
 
         private async Task<int> ScanRootAsync(string root, CancellationToken cancellationToken)
         {
             var enqueued = 0;
 
-            foreach (var path in EnumerateFiles(root))
+            foreach (var path in fileTree.EnumerateFiles(root))
             {
                 if (cancellationToken.IsCancellationRequested) break;
-                if (pathFilter.IsExcluded(path)) continue;
 
                 FileInfo info;
                 try
@@ -90,48 +92,41 @@ namespace Nunam.Indexer.Workers
             return enqueued;
         }
 
+        /// <summary>
+        /// Only entries under watch paths that exist right now are checked: an unplugged drive or an
+        /// unreachable share would otherwise look like every file on it was deleted.
+        /// </summary>
+        private async Task<int> RemoveMissingAsync(CancellationToken cancellationToken)
+        {
+            var roots = _options.WatchPaths
+                .Where(Directory.Exists)
+                .Select(r => r.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar)
+                .ToArray();
+            if (roots.Length == 0) return 0;
+
+            using var scope = scopeFactory.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<NunamDbContext>();
+
+            var indexed = await db.Files
+                .Where(f => f.MachineId == machine.MachineId)
+                .Select(f => f.Path)
+                .ToListAsync(cancellationToken);
+
+            var removed = 0;
+            foreach (var path in indexed)
+            {
+                if (cancellationToken.IsCancellationRequested) break;
+                if (!roots.Any(r => path.StartsWith(r, StringComparison.Ordinal)) || File.Exists(path)) continue;
+
+                removed += await IndexRemover.RemoveAsync(db, machine.MachineId, path, cancellationToken);
+            }
+
+            return removed;
+        }
+
         private static bool IsUnchanged(long? indexedSize, DateTimeOffset? indexedModified, FileInfo info) =>
             indexedSize == info.Length
             && indexedModified is not null
             && Math.Abs((indexedModified.Value - info.LastWriteTimeUtc).TotalSeconds) < 2;
-
-        /// <summary>Depth-first enumeration that tolerates unreadable directories instead of aborting the scan.</summary>
-        private IEnumerable<string> EnumerateFiles(string root)
-        {
-            var stack = new Stack<string>();
-            stack.Push(root);
-
-            while (stack.Count > 0)
-            {
-                var dir = stack.Pop();
-                if (pathFilter.IsExcluded(dir + Path.DirectorySeparatorChar)) continue;
-
-                string[] subdirs;
-                try
-                {
-                    subdirs = Directory.GetDirectories(dir);
-                }
-                catch (Exception ex)
-                {
-                    logger.LogDebug(ex, "Cannot enumerate directories under {Dir}; skipping", dir);
-                    subdirs = [];
-                }
-
-                foreach (var sub in subdirs) stack.Push(sub);
-
-                string[] files;
-                try
-                {
-                    files = Directory.GetFiles(dir);
-                }
-                catch (Exception ex)
-                {
-                    logger.LogDebug(ex, "Cannot enumerate files in {Dir}; skipping", dir);
-                    files = [];
-                }
-
-                foreach (var file in files) yield return file;
-            }
-        }
     }
 }

@@ -7,22 +7,25 @@ using Nunam.Indexer.Indexing;
 namespace Nunam.Indexer.Workers
 {
     /// <summary>
-    /// Watches every configured path for ongoing changes via <see cref="FileSystemWatcher"/> and
-    /// enqueues Parse jobs. Filesystem events are bursty (a single save can fire several
-    /// <c>Changed</c> events), so paths are buffered and only enqueued once they've been quiet for a
-    /// short debounce window. <see cref="JobQueue.EnqueueParseIfAbsentAsync"/> provides a second
-    /// layer of de-duplication at the database.
+    /// Watches every configured path with <see cref="FileSystemWatcher"/>: new and changed files get a
+    /// Parse job, deleted or moved-away ones are dropped from the index, and a folder moved in has its
+    /// files queued. Events are bursty and editors save by delete-then-rename, so paths are buffered
+    /// and only acted on once quiet for <see cref="DebounceWindow"/>, judged by what is on disk then.
     /// </summary>
     public class WatcherWorker(
         IServiceScopeFactory scopeFactory,
         MachineContext machine,
         PathFilter pathFilter,
+        FileTree fileTree,
         IOptions<IndexerOptions> options,
         ILogger<WatcherWorker> logger) : BackgroundService
     {
         private static readonly TimeSpan DebounceWindow = TimeSpan.FromSeconds(2);
         private readonly IndexerOptions _options = options.Value;
-        private readonly ConcurrentDictionary<string, DateTimeOffset> _pending = new(StringComparer.OrdinalIgnoreCase);
+        private readonly ConcurrentDictionary<string, DateTimeOffset> _pending = new(PathComparer);
+
+        private static StringComparer PathComparer =>
+            OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
@@ -39,11 +42,17 @@ namespace Nunam.Indexer.Workers
                 var watcher = new FileSystemWatcher(root)
                 {
                     IncludeSubdirectories = true,
-                    NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size,
+                    NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName | NotifyFilters.LastWrite | NotifyFilters.Size,
+                    InternalBufferSize = 64 * 1024,
                 };
-                watcher.Created += OnChanged;
-                watcher.Changed += OnChanged;
-                watcher.Renamed += OnRenamed;
+                watcher.Created += (_, e) => Buffer(e.FullPath);
+                watcher.Changed += (_, e) => Buffer(e.FullPath);
+                watcher.Deleted += (_, e) => Buffer(e.FullPath);
+                watcher.Renamed += (_, e) =>
+                {
+                    Buffer(e.OldFullPath);
+                    Buffer(e.FullPath);
+                };
                 watcher.Error += OnError;
                 watcher.EnableRaisingEvents = true;
                 watchers.Add(watcher);
@@ -82,39 +91,59 @@ namespace Nunam.Indexer.Workers
                 if (due.Count == 0) continue;
 
                 using var scope = scopeFactory.CreateScope();
+                var db = scope.ServiceProvider.GetRequiredService<NunamDbContext>();
                 var queue = scope.ServiceProvider.GetRequiredService<JobQueue>();
 
                 foreach (var path in due)
                 {
-                    // Drop from the buffer first; a new event arriving mid-enqueue re-adds it.
+                    // Drop from the buffer first; a new event arriving mid-handling re-adds it.
                     _pending.TryRemove(path, out _);
-
-                    if (!File.Exists(path)) continue; // moved/deleted before we got to it
 
                     try
                     {
-                        if (await queue.EnqueueParseIfAbsentAsync(machine.MachineId, path, stoppingToken))
-                        {
-                            logger.LogDebug("Enqueued Parse for changed file {Path}", path);
-                        }
+                        await HandleAsync(db, queue, path, stoppingToken);
+                    }
+                    catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                    {
+                        return;
                     }
                     catch (Exception ex)
                     {
-                        logger.LogWarning(ex, "Failed to enqueue Parse for {Path}; will retry on next event", path);
+                        logger.LogWarning(ex, "Could not update the index for {Path}; the next scan will catch it", path);
                     }
                 }
             }
         }
 
-        private void OnChanged(object sender, FileSystemEventArgs e) => Buffer(e.FullPath);
-
-        private void OnRenamed(object sender, RenamedEventArgs e) => Buffer(e.FullPath);
+        private async Task HandleAsync(NunamDbContext db, JobQueue queue, string path, CancellationToken cancellationToken)
+        {
+            if (File.Exists(path))
+            {
+                if (await queue.EnqueueParseIfAbsentAsync(machine.MachineId, path, cancellationToken))
+                {
+                    logger.LogDebug("Enqueued Parse for changed file {Path}", path);
+                }
+            }
+            else if (Directory.Exists(path))
+            {
+                // A folder moved or copied in arrives as one event; its files raise none of their own.
+                var queued = 0;
+                foreach (var file in fileTree.EnumerateFiles(path))
+                {
+                    if (await queue.EnqueueParseIfAbsentAsync(machine.MachineId, file, cancellationToken)) queued++;
+                }
+                if (queued > 0) logger.LogInformation("Enqueued {Count} file(s) from folder {Path}", queued, path);
+            }
+            else
+            {
+                var removed = await IndexRemover.RemoveAsync(db, machine.MachineId, path, cancellationToken);
+                if (removed > 0) logger.LogInformation("Removed {Count} file(s) under {Path} from the index", removed, path);
+            }
+        }
 
         private void Buffer(string path)
         {
             if (pathFilter.IsExcluded(path)) return;
-            if (Directory.Exists(path)) return; // directory event, not a file
-
             _pending[path] = DateTimeOffset.UtcNow;
         }
 
