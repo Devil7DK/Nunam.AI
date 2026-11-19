@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { SlidersHorizontal } from 'lucide-react';
 import { getMachines, getStatus, type IndexStatus, type MachineSummary, type SearchResult } from '@/api/nunam';
 import { FilterPanel } from '@/components/FilterPanel';
+import { IndexStatusDialog } from '@/components/IndexStatusDialog';
 import { PreviewModal } from '@/components/PreviewModal';
 import { SearchBar } from '@/components/SearchBar';
 import { SearchResults } from '@/components/SearchResults';
@@ -22,6 +23,7 @@ export default function App() {
   const [status, setStatus] = useState<IndexStatus | null>(null);
   const [open, setOpen] = useState<SearchResult | null>(null);
   const [showFilters, setShowFilters] = useState(false);
+  const [showStatus, setShowStatus] = useState(false);
 
   const query = useDebouncedValue(filters.q.trim(), 300);
   const ext = useDebouncedValue(filters.ext, 500);
@@ -62,7 +64,7 @@ export default function App() {
           <div className="flex items-center gap-3">
             <h1 className="text-lg font-semibold tracking-tight">Nunam</h1>
             <div className="flex-1">
-              <StatusLine status={status} />
+              <StatusLine status={status} onClick={() => setShowStatus(true)} />
             </div>
             <ThemeToggle theme={theme} onChange={setTheme} />
           </div>
@@ -98,6 +100,7 @@ export default function App() {
       </div>
 
       <PreviewModal result={open} onClose={() => setOpen(null)} />
+      {status && <IndexStatusDialog status={status} open={showStatus} onOpenChange={setShowStatus} />}
     </div>
   );
 }
