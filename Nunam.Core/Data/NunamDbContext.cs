@@ -43,7 +43,7 @@ namespace Nunam.Core.Data
 
                 e.Property(f => f.FileType).HasConversion<string>();
                 e.Property(f => f.Metadata).HasColumnType("jsonb");
-                e.Property(f => f.Embedding).HasColumnType("vector(768)");
+                e.Property(f => f.Embedding).HasColumnType("vector(1024)");
 
                 e.HasOne(f => f.Machine)
                     .WithMany(m => m.Files)

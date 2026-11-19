@@ -100,7 +100,7 @@ namespace Nunam.Core.Data.Migrations
                         .HasColumnName("description");
 
                     b.Property<Vector>("Embedding")
-                        .HasColumnType("vector(768)")
+                        .HasColumnType("vector(1024)")
                         .HasColumnName("embedding");
 
                     b.Property<string>("Extension")

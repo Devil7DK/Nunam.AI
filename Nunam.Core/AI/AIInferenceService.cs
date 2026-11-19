@@ -58,6 +58,7 @@ namespace Nunam.Core.AI
                 {
                     ModelId = _options.ChatModel,
                     MaxOutputTokens = _options.MaxOutputTokens,
+                    Reasoning = _options.DisableReasoning ? new ReasoningOptions { Effort = ReasoningEffort.None } : null,
                 },
                 cancellationToken);
 

@@ -35,8 +35,15 @@ namespace Nunam.Core.AI
         /// <summary>Ignored by Ollama and LM Studio, kept for real OpenAI-compatible gateways.</summary>
         public string? ApiKey { get; set; }
 
-        /// <summary>Vision model used to describe images (e.g. <c>llava:13b</c>).</summary>
-        public string ChatModel { get; set; } = "llava:13b";
+        /// <summary>Vision model used to describe images and rendered pages.</summary>
+        public string ChatModel { get; set; } = "gemma4:12b-it-qat";
+
+        /// <summary>
+        /// Turns off "thinking" for reasoning-capable vision models: a description needs no reasoning,
+        /// and the hidden reasoning tokens count against <see cref="MaxOutputTokens"/>. Disable for a
+        /// server that rejects the reasoning parameter.
+        /// </summary>
+        public bool DisableReasoning { get; set; } = true;
 
         /// <summary>
         /// Upper bound on tokens generated per description. Sized generously because
@@ -45,21 +52,24 @@ namespace Nunam.Core.AI
         /// </summary>
         public int MaxOutputTokens { get; set; } = 1024;
 
-        /// <summary>Embedding model (e.g. <c>nomic-embed-text</c>).</summary>
-        public string EmbeddingModel { get; set; } = "nomic-embed-text";
+        /// <summary>
+        /// Embedding model. bge-m3 is multilingual, so a Tamil query finds an English document and the
+        /// other way round.
+        /// </summary>
+        public string EmbeddingModel { get; set; } = "bge-m3";
 
-        /// <summary>Embedding dimensionality; must match the <c>vector(N)</c> column. nomic-embed-text = 768.</summary>
-        public int EmbeddingDimensions { get; set; } = 768;
+        /// <summary>Embedding dimensionality; must match the <c>vector(N)</c> column. bge-m3 = 1024.</summary>
+        public int EmbeddingDimensions { get; set; } = 1024;
 
         /// <summary>
-        /// Prepended to indexed text before embedding. nomic-embed-text is trained with task prefixes and
-        /// retrieves noticeably worse without them; set both prefixes to empty for models that don't use any.
-        /// Changing this invalidates every stored vector: re-embed all files.
+        /// Prepended to indexed text before embedding, for models trained with task prefixes
+        /// (nomic-embed-text: <c>search_document: </c>); bge-m3 uses none. Changing this invalidates
+        /// every stored vector: re-embed all files.
         /// </summary>
-        public string EmbeddingDocumentPrefix { get; set; } = "search_document: ";
+        public string EmbeddingDocumentPrefix { get; set; } = "";
 
-        /// <summary>Prepended to search queries before embedding. Pairs with <see cref="EmbeddingDocumentPrefix"/>.</summary>
-        public string EmbeddingQueryPrefix { get; set; } = "search_query: ";
+        /// <summary>Prepended to search queries (nomic-embed-text: <c>search_query: </c>). Pairs with <see cref="EmbeddingDocumentPrefix"/>.</summary>
+        public string EmbeddingQueryPrefix { get; set; } = "";
 
         /// <summary>Default instruction sent alongside an image when no per-call prompt is given.</summary>
         public string DescribePrompt { get; set; } =
