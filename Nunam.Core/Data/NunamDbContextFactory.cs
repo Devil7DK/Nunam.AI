@@ -15,7 +15,7 @@ namespace Nunam.Core.Data
         {
             var options = new DbContextOptionsBuilder<NunamDbContext>()
                 .UseNpgsql(
-                    "Host=localhost;Database=nunam_dev;Username=postgres;Password=postgres",
+                    "Host=localhost;Port=5442;Database=nunam_dev;Username=postgres;Password=postgres",
                     npg => npg.UseVector())
                 .Options;
 
