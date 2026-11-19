@@ -1,5 +1,5 @@
 # Homelab stack: Postgres + pgvector, migrations, API, web UI and AI worker.
-# Indexers run natively on each machine; Ollama runs on the GPU machine.
+# Indexers run natively on each machine; Ollama runs separately (its own GPU container).
 #   cp docker/.env.example docker/.env   # then edit
 #   docker compose -f docker/docker-compose.yml up -d --build
 name: nunam
@@ -47,7 +47,7 @@ services:
       ConnectionStrings__Postgres: Host=postgres;Database=${POSTGRES_DB};Username=nunam_api;Password=${NUNAM_API_PASSWORD}
       AI__Provider: ${AI_PROVIDER:-Ollama}
       AI__BaseUrl: ${AI_BASE_URL}
-      AI__EmbeddingModel: ${AI_EMBEDDING_MODEL:-nomic-embed-text}
+      AI__EmbeddingModel: ${AI_EMBEDDING_MODEL:-bge-m3}
     depends_on:
       migrations:
         condition: service_completed_successfully
@@ -71,8 +71,8 @@ services:
       ConnectionStrings__Postgres: Host=postgres;Database=${POSTGRES_DB};Username=nunam_aiworker;Password=${NUNAM_AIWORKER_PASSWORD}
       AI__Provider: ${AI_PROVIDER:-Ollama}
       AI__BaseUrl: ${AI_BASE_URL}
-      AI__ChatModel: ${AI_CHAT_MODEL:-qwen2.5vl:7b}
-      AI__EmbeddingModel: ${AI_EMBEDDING_MODEL:-nomic-embed-text}
+      AI__ChatModel: ${AI_CHAT_MODEL:-gemma4:12b-it-qat}
+      AI__EmbeddingModel: ${AI_EMBEDDING_MODEL:-bge-m3}
     depends_on:
       migrations:
         condition: service_completed_successfully
