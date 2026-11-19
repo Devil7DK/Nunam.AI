@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Hosting.WindowsServices;
 using Nunam.Core.Data;
 using Nunam.Core.Jobs;
 using Nunam.Indexer;
@@ -6,7 +7,21 @@ using Nunam.Indexer.Indexing;
 using Nunam.Indexer.Parsing;
 using Nunam.Indexer.Workers;
 
-var builder = Host.CreateApplicationBuilder(args);
+// A Windows service starts in System32; config files and natives live next to the executable.
+var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings
+{
+    Args = args,
+    ContentRootPath = WindowsServiceHelpers.IsWindowsService() ? AppContext.BaseDirectory : null,
+});
+
+// Per-machine settings and secrets (watch paths, DB password, Syncfusion key) for installs that
+// don't run in Development, where user-secrets aren't read. Environment variables still win.
+builder.Configuration
+    .AddJsonFile(Path.Combine(builder.Environment.ContentRootPath, "appsettings.Local.json"), optional: true)
+    .AddEnvironmentVariables();
+
+builder.Services.AddWindowsService(o => o.ServiceName = "Nunam.Indexer");
+builder.Services.AddSystemd();
 
 builder.Services.Configure<IndexerOptions>(
     builder.Configuration.GetSection(IndexerOptions.SectionName));
