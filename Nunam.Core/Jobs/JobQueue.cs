@@ -72,6 +72,19 @@ namespace Nunam.Core.Jobs
                     cancellationToken);
         }
 
+        /// <summary>
+        /// Deletes <see cref="IndexJobStatus.Done"/> jobs last touched before <paramref name="olderThan"/>
+        /// ago. Every parse, describe and embed leaves one, so without this the table only grows.
+        /// Failed jobs stay: they are the record of what needs attention.
+        /// </summary>
+        public Task<int> PurgeDoneAsync(TimeSpan olderThan, CancellationToken cancellationToken = default)
+        {
+            var cutoff = DateTimeOffset.UtcNow - olderThan;
+            return db.IndexJobs
+                .Where(j => j.Status == IndexJobStatus.Done && j.LastModified < cutoff)
+                .ExecuteDeleteAsync(cancellationToken);
+        }
+
         /// <summary>Adds a job of the given kind for a file. Saved with the caller's next <c>SaveChanges</c>.</summary>
         public void Enqueue(Guid machineId, string path, IndexJobKind kind) =>
             db.IndexJobs.Add(new IndexJob { MachineId = machineId, Path = path, Kind = kind });
