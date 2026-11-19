@@ -11,7 +11,7 @@ Nunam indexes all files across multiple machines on the same local network (desk
 
 ### Goals
 - Index files and metadata across multiple machines (documents, images, audio, video)
-- Use OCR and a local multimodal LLM (LLaVA) to understand unrecognized files
+- Use OCR and a local multimodal LLM to understand images, scans and video frames
 - Provide a web UI accessible from any device on the local network
 - Support natural language queries (e.g. "show me documents related to land/property")
 - Everything self-hosted: LLM, embeddings, indexer, database, API, UI
@@ -51,7 +51,7 @@ Nunam indexes all files across multiple machines on the same local network (desk
 │          │        │       │                              │
 │          │  ┌─────▼─────┐ │                              │
 │          │  │  Ollama   │ │                              │
-│          │  │(LLaVA +   │ │                              │
+│          │  │(vision +  │ │                              │
 │          │  │  embed)   │ │                              │
 │          │  └───────────┘ │                              │
 │          └────────────────┘                              │
@@ -77,9 +77,9 @@ Nunam indexes all files across multiple machines on the same local network (desk
 | Video metadata | FFMpegCore (NuGet) | Duration, codec, resolution |
 | File type detection | MimeDetective (NuGet) | Detects true file type by magic bytes, not extension |
 | File watching | FileSystemWatcher (.NET built-in) | Incremental re-indexing |
-| LLM runtime | Ollama **or** LM Studio (self-hosted) | Pluggable via config; runs on the GPU machine |
-| Vision model | llava:13b (or any vision model on LM Studio) | Describes unknown/image files |
-| Embeddings | nomic-embed-text | 768-dim vectors |
+| LLM runtime | Ollama **or** LM Studio (self-hosted) | Pluggable via config; production: Ollama (`ollama/ollama:rocm`, AMD GPU) in homelab container `192.168.7.113:11434` |
+| Vision model | `gemma4:12b-it-qat` (reasoning switched off) | Describes images, scanned pages, video frames — chosen over mistral-small3.2:24b and qwen3.8:27b: as accurate on the samples, 2–3× faster, 7 GB |
+| Embeddings | `bge-m3` | 1024-dim, multilingual (Tamil query ↔ English document). Replaced nomic-embed-text (768) after scoring MRR 0.95 vs 0.76 on the sample set |
 | Database | PostgreSQL 16 + pgvector | Single DB for all search modes |
 | Backend API | ASP.NET Core 10 Minimal API | Runs on homelab |
 | AI abstraction | `Microsoft.Extensions.AI` (`IChatClient` + `IEmbeddingGenerator`) | Provider-neutral seam; backend chosen at startup |
@@ -140,8 +140,8 @@ Nunam.slnx
 │
 ├── Nunam.AIWorker/                  # .NET Worker Service — runs DESCRIBE + EMBED jobs on the homelab
 │   ├── Workers/
-│   │   ├── DescribeWorker.cs        # Consumes Kind=Describe jobs (LLaVA via Ollama)
-│   │   └── EmbedWorker.cs           # Consumes Kind=Embed jobs (nomic-embed-text via Ollama, batched)
+│   │   ├── DescribeWorker.cs        # Consumes Kind=Describe jobs (vision model via Ollama)
+│   │   └── EmbedWorker.cs           # Consumes Kind=Embed jobs (bge-m3 via Ollama, batched)
 │   ├── appsettings.json
 │   ├── Dockerfile                   # Lives in docker-compose alongside API/UI
 │   └── Nunam.AIWorker.csproj
@@ -334,7 +334,7 @@ public class NunamDbContext(DbContextOptions<NunamDbContext> options) : DbContex
 
             e.Property(f => f.FileType).HasConversion<string>();
             e.Property(f => f.Metadata).HasColumnType("jsonb");
-            e.Property(f => f.Embedding).HasColumnType("vector(768)");
+            e.Property(f => f.Embedding).HasColumnType("vector(1024)");
 
             e.HasOne(f => f.Machine)
                 .WithMany(m => m.Files)
@@ -436,8 +436,8 @@ Inspired by Immich's queue architecture: **one `IndexJob` row per (file, task)**
 | `Kind` | What it does | Where it runs | Hardware fit |
 |---|---|---|---|
 | `Parse` | Detect MIME, parse content, render preview PNG, upsert partial `IndexedFile` row | `Nunam.Indexer` on each indexed machine | CPU + local disk |
-| `Describe` | Send rendered preview to LLaVA, store description | `Nunam.AIWorker` on homelab | Network → Ollama on Gaming PC (GPU) |
-| `Embed` | Embed `filename + description + content` with `nomic-embed-text`, store vector | `Nunam.AIWorker` on homelab | Network → Ollama on Gaming PC (GPU) |
+| `Describe` | Send preview to the vision model, store description, then queue Embed | `Nunam.AIWorker` on homelab | Network → Ollama container (GPU) |
+| `Embed` | Embed `filename + description + content` with `bge-m3`, store vector | `Nunam.AIWorker` on homelab | Network → Ollama container (GPU) |
 
 **Worker dispatch:** each worker polls `IndexJob WHERE Status='Pending' AND Kind=<its kind>`, claims rows with `FOR UPDATE SKIP LOCKED`, processes, marks `Done` or `Failed`. Per-kind concurrency is configured in each worker's `appsettings.json` (e.g. `Describe = 1`, `Embed = 4`).
 
@@ -473,14 +473,14 @@ AIWorker (on homelab, batches)
     │
     ├─ DescribeWorker (Concurrency: 1)
     │      ├─ Reads IndexedFile.PreviewImage (does NOT need filesystem access to the original)
-    │      ├─ POSTs to Ollama generate API with llava:13b + image
+    │      ├─ POSTs to Ollama chat API with gemma4:12b-it-qat + image (think: false)
     │      ├─ UPDATE IndexedFile.Description
     │      └─ UPDATE this job to Status=Done
     │
     └─ EmbedWorker (Concurrency: 4, batched by N)
            ├─ Pulls up to N pending Embed jobs (preferring ones whose Describe is Done)
            ├─ For each: build embedding input = filename + description + first 512 tokens of content
-           ├─ POSTs all N in one nomic-embed-text call
+           ├─ POSTs all N in one bge-m3 call
            ├─ UPDATE IndexedFile.Embedding for each — file is now SEMANTICALLY-SEARCHABLE
            └─ UPDATE all these jobs to Status=Done
 ```
@@ -490,7 +490,7 @@ AIWorker (on homelab, batches)
 - **Independent failure domains.** LLaVA timing out doesn't fail Embed jobs; Embed jobs failing for one file don't fail the batch's other 31. The user-visible result: search keeps improving over time as bits of the AI pipeline catch up, instead of a wall of `Failed` rows whenever Ollama hiccups.
 - **Files become keyword-searchable immediately after Parse,** without waiting for AI. Semantic search lights up later as Embed completes.
 - **Right batch size per workload.** LLaVA processes one big image per call; embeddings batch beautifully (16–32 inputs per HTTP request). Separate queues let each worker use the right strategy.
-- **Different hardware profiles cleanly separated.** Parse is CPU + local IO on the user's machine; Describe / Embed are network calls from the always-on homelab to the intermittently-on Gaming PC. The homelab AI worker can keep retrying when Ollama is down without surfacing failures to users.
+- **Different hardware profiles cleanly separated.** Parse is CPU + local IO on the user's machine; Describe / Embed are network calls from the AI worker to the Ollama GPU container, which may be busy or down. The homelab AI worker can keep retrying when Ollama is down without surfacing failures to users.
 - **No file access needed on the AI side.** ParseWorker writes the preview PNG into `IndexedFile.PreviewImage`. AIWorker reads only from the DB; it never needs SMB/NFS access to the indexed machine.
 
 ### Producers, not jobs
@@ -521,11 +521,11 @@ Any worker that hits an error marks its own job `Failed` with `Stage` left at th
   },
   "AI": {
     "Provider": "Ollama",                       // or "OpenAICompatible" for LM Studio
-    "BaseUrl": "http://gaming-pc.lan:11434",     // LM Studio: "http://gaming-pc.lan:1234/v1"
+    "BaseUrl": "http://192.168.7.113:11434",     // LM Studio: "http://<host>:1234/v1"
     "ApiKey": null,                              // ignored by Ollama/LM Studio
-    "ChatModel": "llava:13b",
-    "EmbeddingModel": "nomic-embed-text",
-    "EmbeddingDimensions": 768,
+    "ChatModel": "gemma4:12b-it-qat",
+    "EmbeddingModel": "bge-m3",
+    "EmbeddingDimensions": 1024,
     "DescribePrompt": "Describe this image in detail for a search index..."
   }
 }
@@ -580,11 +580,11 @@ One SQL statement (`SearchService`), built from CTEs:
 
 1. **filtered** — ids passing type/machine/extension/date filters.
 2. **keyword** — full-text matches plus filename `ILIKE` matches (the FTS parser keeps `deed.txt` as one token, so filename substrings need `ILIKE`). Filename hits rank first, then `ts_rank_cd`. Keyword mode uses `websearch_to_tsquery` (all words, `"phrases"`, `-exclusions`); **hybrid matches any word** because hybrid queries are sentences and requiring every word misses most relevant files.
-3. **semantic** — nearest `Search:CandidatesPerSide` (200) embeddings, then only those within `Search:SemanticRelativeMargin` (0.08) of the best similarity. Cosine similarity has no absolute meaning across queries with nomic-embed-text (a right answer scored 0.54 for one query while noise scored 0.59 for another), so a fixed floor doesn't work; relative to the top hit it does.
+3. **semantic** — nearest `Search:CandidatesPerSide` (200) embeddings, then only those within `Search:SemanticRelativeMargin` (0.05, calibrated for bge-m3; nomic-embed-text needed 0.08) of the best similarity. Cosine similarity has no absolute meaning across queries with nomic-embed-text (a right answer scored 0.54 for one query while noise scored 0.59 for another), so a fixed floor doesn't work; relative to the top hit it does.
 4. **fused** — reciprocal rank fusion, `1/(60 + keyword rank) + 1/(60 + semantic rank)`. Chosen over the originally planned `ts_rank × 0.4 + similarity × 0.6`: `ts_rank` values are ~0.01–0.1 while similarity is ~0.5–0.8, so a weighted sum is decided almost entirely by the semantic side.
 5. **page** — limit/offset, then `ts_headline` only for the returned rows.
 
-Query embedding uses the `search_query: ` prefix and documents use `search_document: ` (`AI:EmbeddingQueryPrefix` / `AI:EmbeddingDocumentPrefix`), as nomic-embed-text is trained. **Changing either prefix or the model means re-embedding every file:**
+Embedding prefixes are configurable (`AI:EmbeddingQueryPrefix` / `AI:EmbeddingDocumentPrefix`): empty for bge-m3, `search_query: ` / `search_document: ` for nomic-embed-text. **Changing the model or either prefix means re-embedding every file:**
 ```sql
 INSERT INTO index_jobs (id, machine_id, path, kind, status, stage, created, last_modified)
 SELECT gen_random_uuid(), machine_id, path, 'Embed', 'Pending', 'None', now(), now() FROM files;
@@ -629,17 +629,16 @@ CORS: `Cors:AllowedOrigins` (GET only); `*` allows any origin. Development allow
 
 ## 9. Ollama Models
 
+Ollama runs in the homelab's GPU container (`ssh ollama`, `192.168.7.113:11434`, Docker image `ollama/ollama:rocm`, `OLLAMA_HOST=0.0.0.0:11434`), shared with Open WebUI. Both models below were already installed there.
+
 | Model | Purpose | Size |
 |---|---|---|
-| `nomic-embed-text` | Generate embeddings | ~270MB |
-| `llava:13b` | Describe unknown/image files | ~8GB |
-| `llama3.2:3b` *(optional)* | Intent parsing for complex NL queries | ~2GB |
+| `bge-m3` | Embeddings, 1024-dim, multilingual | 1.2 GB |
+| `gemma4:12b-it-qat` | Describes images, scanned pages and video frames (reasoning off) | 7.2 GB |
 
-Pull on homelab:
-```bash
-ollama pull nomic-embed-text
-ollama pull llava:13b
-```
+Compared 2026-11-20 on the sample set (16 files, 10 queries incl. 2 Tamil):
+- **Embeddings** — bge-m3 put the right file first for 9/10 queries (MRR 0.95), nomic-embed-text for 7/10 (MRR 0.76). nomic failed both Tamil queries (ranks 8 and 4) and barely separated the song for "music".
+- **Vision** — gemma4:12b-it-qat, mistral-small3.2:24b and qwen3.8:27b all described the bill, the rotated photo and the video frame correctly; gemma took ~2 s per image warm vs 3.5–5 s and 5.6–7 s, and is the smallest. All three are thinking- or vision-capable; with reasoning left on, hidden reasoning tokens eat the output budget, hence `AI:DisableReasoning`.
 
 ---
 
@@ -649,7 +648,7 @@ Step-by-step guides: **`docs/deployment.md`** (homelab stack) and **`docs/adding
 
 **Hardware split:**
 - **Homelab** — Docker Compose (`docker/docker-compose.yml`): `postgres` (pgvector, Postgres 18, port published for indexers), `migrations` (one-shot EF bundle, runs as the owner role), `nunam-api` (read-only `nunam_api` login, not published), `nunam-ui` (nginx on `UI_PORT`, proxies `/api`), `nunam-aiworker` (`nunam_aiworker` login). Settings and passwords in `docker/.env` (template `docker/.env.example`, git-ignored).
-- **Gaming PC** — Ollama only, outside Compose (`OLLAMA_HOST=0.0.0.0:11434`). Jobs wait `Pending` while it's off.
+- **Ollama container** (`192.168.7.113`, its own Proxmox container with the AMD GPU) — outside Compose; `AI_BASE_URL` points at it. Jobs wait `Pending` while it's unreachable.
 - **Indexed machines** — `Nunam.Indexer` natively: Windows service via `deploy/indexer/install-windows.ps1`, Linux via `deploy/indexer/nunam-indexer.service`. Per-machine settings and secrets in `appsettings.Local.json` next to the executable (template `deploy/indexer/appsettings.Local.example.json`, git-ignored); it overrides `appsettings.json`, environment variables override both. The content root is always the executable's folder.
 
 Database logins are created by `docker/postgres/10-roles.sh` on first start of the volume: `nunam_indexer` and `nunam_aiworker` get SELECT/INSERT/UPDATE/DELETE, `nunam_api` SELECT only, all through default privileges on tables the owner creates.
@@ -708,6 +707,7 @@ Database logins are created by `docker/postgres/10-roles.sh` on first start of t
 - [x] Add CORS for local network access — config-driven origin list
 - [x] Test natural language queries end-to-end — on the dev sample set: "documents about land or property" → the sale agreement and land deed; "when is the electricity bill due" → the scanned bill and bill photo; "family celebration video" → the birthday video; "photo from a holiday" → the holiday photo. Weak spot: audio is only embedded from its tags, so "music" barely separates the song from unrelated files
 - [x] Embed with nomic's `search_document:` / `search_query:` prefixes (needed re-embedding the dev set)
+- [x] Switch to the homelab Ollama: `bge-m3` embeddings (`vector(1024)`, migration `UseBgeM3Embeddings` clears old vectors and queues every file for re-embedding) and `gemma4:12b-it-qat` descriptions with reasoning off; semantic margin recalibrated to 0.05 (§9)
 - [ ] `POST /api/index/trigger` — not built; the API's DB user is read-only (see §7)
 
 ### Phase 4 — Frontend
@@ -741,7 +741,7 @@ Database logins are created by `docker/postgres/10-roles.sh` on first start of t
 | 6 | What to do with encrypted PDFs? | Skip content, set `metadata = {"encrypted": true}`; the file stays searchable by name. `Description` is left to the AI worker |
 | 7 | Should the Indexer write directly to DB or via API? | **Direct DB write** — avoids HTTP overhead during bulk indexing, indexer uses a dedicated low-privilege `nunam_indexer` DB user (INSERT/UPDATE/SELECT only). API uses a separate `nunam_api` read-only user. AIWorker uses `nunam_aiworker` with INSERT/UPDATE/SELECT on `index_jobs` + `files` only. |
 | 8 | One `IndexJob` table or many? | **One table, `Kind` column** discriminates Parse / Describe / Embed. Same shape, single set of migrations, per-kind queues fall out of `WHERE Kind=...`. Inspired by Immich's BullMQ queue separation but adapted to Postgres-as-queue. |
-| 9 | Where does Ollama live? | **Gaming PC** (the only machine with a GPU). AIWorker calls it over LAN. Tolerates intermittent availability via Postgres-backed retry (jobs stay `Pending` while Ollama is down). |
+| 9 | Where does Ollama live? | **Homelab GPU container** (`192.168.7.113:11434`, `ollama/ollama:rocm`). Originally planned for the Gaming PC. AIWorker still tolerates it being unreachable: jobs stay `Pending`. |
 
 ---
 
@@ -794,7 +794,7 @@ Database logins are created by `docker/postgres/10-roles.sh` on first start of t
 <ProjectReference Include="..\Nunam.Core\Nunam.Core.csproj" />   <!-- pulls in IAIInferenceService + AddNunamAI -->
 ```
 
-> **Note:** `Program.cs` calls `builder.Services.AddNunamAI(builder.Configuration)`. The active backend comes from the `AI` config section — `appsettings.json` defaults to **Ollama on the Gaming PC** (production), and `appsettings.Development.json` overrides to **LM Studio on `localhost:1234/v1`** with `qwen/qwen3-vl-4b` + `text-embedding-nomic-embed-text-v1.5` (verified working on this machine).
+> **Note:** `Program.cs` calls `builder.Services.AddNunamAI(builder.Configuration)`. The active backend comes from the `AI` config section — both `appsettings.json` and `appsettings.Development.json` point at **Ollama in the homelab GPU container** (`192.168.7.113:11434`, `gemma4:12b-it-qat` + `bge-m3`). LM Studio still works via `AI:Provider=OpenAICompatible`.
 
 ### Nunam.Api
 ```xml
@@ -848,7 +848,7 @@ How the pieces outside the repo were set up, so they can be rebuilt. No secret v
 - `appsettings.Development.json` (Indexer, AIWorker) and `NunamDbContextFactory` point at this container.
 
 ### Dev AI backend
-- Ollama on `localhost:11434` with `qwen2.5vl:7b` (vision) and `nomic-embed-text` (pulled with `ollama pull nomic-embed-text`). The Development config still targets LM Studio; override per run with `AI__Provider=Ollama AI__BaseUrl=http://localhost:11434 AI__ChatModel=qwen2.5vl:7b AI__EmbeddingModel=nomic-embed-text`.
+- Development uses the homelab Ollama directly (`192.168.7.113:11434`, `gemma4:12b-it-qat` + `bge-m3`) — the Development configs of the API and AIWorker point at it, no overrides needed. A local Ollama on this workstation also has `bge-m3`.
 
 ### Syncfusion (document parsing)
 - **License:** Essential Studio Enterprise Edition — **Community license** on the syncfusion.com account.

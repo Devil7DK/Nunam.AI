@@ -2,16 +2,18 @@
 
 The homelab runs Postgres (with pgvector), the API, the web UI and the AI worker in Docker. Indexers run natively on each machine with files ([adding a machine](adding-a-machine.md)); Ollama runs on the machine with the GPU.
 
-## 1. Ollama on the GPU machine
+## 1. Ollama
+
+Ollama runs in its own GPU container on the homelab (`192.168.7.113`, `ollama/ollama:rocm`). It needs:
 
 ```bash
-ollama pull qwen2.5vl:7b        # describes images, scanned pages and video frames
-ollama pull nomic-embed-text    # 768-dim embeddings; must match the vector(768) column
+ollama pull gemma4:12b-it-qat   # describes images, scanned pages and video frames
+ollama pull bge-m3              # 1024-dim multilingual embeddings; must match the vector(1024) column
 ```
 
-Ollama listens on `127.0.0.1` by default. Set `OLLAMA_HOST=0.0.0.0:11434` (Windows: a system environment variable, then restart Ollama) so the homelab can reach it, and allow port 11434 through the firewall for the LAN only.
+and `OLLAMA_HOST=0.0.0.0:11434` so other machines can reach it. Set `AI_BASE_URL` in `docker/.env` to its address.
 
-The AI worker tolerates this machine being off: Describe and Embed jobs wait as `Pending` and resume when it's back. Search falls back to keywords while it's unreachable.
+The AI worker tolerates Ollama being unreachable: Describe and Embed jobs wait as `Pending` and resume when it's back. Search falls back to keywords meanwhile.
 
 ## 2. Start the stack
 
@@ -53,11 +55,11 @@ docker compose -f docker/docker-compose.yml exec -T postgres \
 
 ## Changing the embedding model or prefixes
 
-Stored vectors only match queries embedded the same way. After changing `AI_EMBEDDING_MODEL` (same dimensions) or the `AI__EmbeddingDocumentPrefix` / `AI__EmbeddingQueryPrefix` settings, re-embed everything:
+Stored vectors only match queries embedded the same way. After changing `AI_EMBEDDING_MODEL` to one with the same dimensions or the `AI__EmbeddingDocumentPrefix` / `AI__EmbeddingQueryPrefix` settings, re-embed everything:
 
 ```sql
 INSERT INTO index_jobs (id, machine_id, path, kind, status, stage, created, last_modified)
 SELECT gen_random_uuid(), machine_id, path, 'Embed', 'Pending', 'None', now(), now() FROM files;
 ```
 
-A model with a different dimension needs a migration changing `vector(768)`.
+A model with a different dimension needs a migration changing `vector(1024)` (see `UseBgeM3Embeddings` for the pattern: clear vectors, alter the column, queue Embed jobs).
