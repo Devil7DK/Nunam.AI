@@ -777,13 +777,14 @@ sc start Nunam.Indexer
 - [ ] `POST /api/index/trigger` — not built; the API's DB user is read-only (see §7)
 
 ### Phase 4 — Frontend
-- [ ] Scaffold React + Vite + TypeScript + Tailwind + shadcn/ui
-- [ ] Build `SearchBar` with debounce and mode toggle
-- [ ] Build `FilterPanel` (type, machine, extension, date)
-- [ ] Build `SearchResults` and `ResultCard`
-- [ ] Build `PreviewModal` (text snippet / image thumbnail)
-- [ ] Wire up `useSearch` hook to API
-- [ ] Polish UI, dark mode, loading/empty states
+- [x] Scaffold React + Vite + TypeScript + Tailwind + shadcn/ui — Tailwind v4 via `@tailwindcss/vite`, shadcn/ui (Radix, "Nova" preset) with the system UI font instead of Geist and a smaller radius; Vite dev server proxies `/api` to `NUNAM_API_URL` (default `http://localhost:5033`)
+- [x] Build `SearchBar` with debounce and mode toggle — 300 ms debounce, Hybrid / Keywords / Meaning, `/` focuses the box, in-flight requests are aborted when the query changes
+- [x] Build `FilterPanel` (type, machine, extension, date) — native date inputs; collapses behind a "Filters" button below the `lg` breakpoint
+- [x] Build `SearchResults` and `ResultCard` — thumbnail (`preview?size=128`) or type icon, machine badge, folder path with copy button, highlighted snippet (or the AI description), size and date; "Show more" paging; empty query lists recently modified files
+- [x] Build `PreviewModal` (text snippet / image thumbnail) — preview at 1024 px, AI description, metadata (GPS links to OpenStreetMap), first 20 000 chars of text
+- [x] Wire up `useSearch` hook to API — plus `useUrlState`: query, mode and filters live in the address bar, so searches can be bookmarked
+- [x] Polish UI, dark mode, loading/empty states — system/light/dark toggle, skeleton rows, error and no-result states, keyword-only fallback warning, index status line (files, machines, queued/failed jobs; refreshes every minute)
+- Opening a file on its own machine: browsers block `file://` links from an `http://` page, so each result has **Copy path** instead (clipboard needs https or localhost; over plain LAN http it falls back to a prompt with the path selected)
 
 ### Phase 5 — Deployment & Hardening
 - [ ] Finalize `docker-compose.yml` for homelab
