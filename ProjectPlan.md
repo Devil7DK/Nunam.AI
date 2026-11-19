@@ -753,11 +753,12 @@ sc start Nunam.Indexer
 - [x] Implement `PowerPointParser` using Syncfusion.Presentation — `.pptx` family only (Syncfusion can't open binary `.ppt`; it falls back to filename-only), shape/group/table text + speaker notes
 - [x] Cap stored content at `MaxContentChars` (500 000) — the FTS trigger's `to_tsvector` fails above 1 MB — and strip NULs centrally in `ParseWorker`
 - [x] Register the Syncfusion license at Indexer startup from `Syncfusion:LicenseKey` (see §14)
-- [ ] Implement `ImageParser` (EXIF via MetadataExtractor + OCR via Syncfusion.OCR) — *partial: stores the image as `PreviewImage` (≤ `MaxPreviewMb`) and queues Describe; EXIF + OCR not yet*
+- [x] Implement `ImageParser` (EXIF via MetadataExtractor + OCR via Syncfusion.OCR) — camera make/model, date taken, GPS, pixel size into metadata; OCR text (kept only when it has ≥ 3 real words, so photos don't fill `content` with noise) into content; preview scaled to `PreviewMaxEdgePx` (1568) with EXIF rotation applied, JPEG unless transparent. Over `MaxPreviewMb`: EXIF only
+- [x] OCR scanned PDFs — `PdfParser` adds a text layer to the first `OcrMaxPdfPages` (20) pages of a PDF with no text, then extracts it; the rendered first page still goes to Describe
 - [x] Implement `TextParser` — plain text / source / markup read as UTF-8 content (NULs stripped)
-- [ ] Implement `AudioParser` using TagLibSharp
-- [ ] Implement `VideoParser` using FFMpegCore
-- [ ] Implement `FallbackParser` — render first page/frame to PNG into `IndexedFile.PreviewImage` (no AI call here) — *partial: currently indexes filename + metadata only, no render*
+- [x] Implement `AudioParser` using TagLibSharp — title/artists/album/genre/comment/lyrics as content (so songs are found by name), plus year, track, duration, bitrate, sample rate, channels
+- [x] Implement `VideoParser` using FFMpegCore — duration, resolution, frame rate, codecs, container, title/creation tags via ffprobe; one frame at 10% (≤ 30 s) grabbed with ffmpeg as the preview → Describe. Needs ffmpeg on the machine (see §14); without it the video is indexed by name only
+- [x] `FallbackParser` — indexes filename + filesystem metadata only. Rendering moved to the parsers that can render: `PdfParser` (page 1 of scanned PDFs), `VideoParser` (a frame), `ImageParser` (the image). Not rendered: Word/PowerPoint files without text (would need `Syncfusion.DocIORenderer`/`PresentationRenderer`) and legacy `.ppt`
 - [x] Implement `FileTypeDetector` using MimeDetective — extension first (cheap, usually right), magic bytes only for unknown extensions
 - [x] Wire ParseWorker to upsert `IndexedFile` and enqueue the follow-up: `Describe` when there's a preview (DescribeWorker then enqueues `Embed`, so the vector includes the description), otherwise `Embed` directly
 - [x] Test parse-only indexing on a sample folder with mixed file types — verified on Linux against a pgvector container: excludes honoured, keyword (FTS) search finds parsed text before the AIWorker runs
@@ -843,18 +844,16 @@ sc start Nunam.Indexer
 <!-- Installed (all Syncfusion packages must share one version; the license key is per major version) -->
 <PackageReference Include="Syncfusion.Licensing" Version="35.2.12" />
 <PackageReference Include="Syncfusion.Pdf.Net.Core" Version="35.2.12" />
-<PackageReference Include="Syncfusion.PdfToImageConverter.Net" Version="35.2.12" />
+<PackageReference Include="Syncfusion.PdfToImageConverter.Net.Core" Version="35.2.12" />
+<PackageReference Include="Syncfusion.PDF.OCR.Net.Core" Version="35.2.12" />
 <PackageReference Include="Syncfusion.DocIO.Net.Core" Version="35.2.12" />
 <PackageReference Include="Syncfusion.XlsIO.Net.Core" Version="35.2.12" />
 <PackageReference Include="Syncfusion.Presentation.Net.Core" Version="35.2.12" />
 <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="4.150.1" />
 <PackageReference Include="Mime-Detective" Version="25.8.1" />
-
-<!-- Planned -->
-<PackageReference Include="Syncfusion.PDF.OCR.Net.Core" Version="35.2.12" />
-<PackageReference Include="MetadataExtractor" Version="*" />
-<PackageReference Include="TagLibSharp" Version="*" />
-<PackageReference Include="FFMpegCore" Version="*" />
+<PackageReference Include="MetadataExtractor" Version="2.9.3" />
+<PackageReference Include="TagLibSharp" Version="2.3.0" />
+<PackageReference Include="FFMpegCore" Version="6.0.0" />
 <PackageReference Include="Microsoft.Extensions.Hosting" Version="*" />
 ```
 
@@ -929,5 +928,14 @@ How the pieces outside the repo were set up, so they can be rebuilt. No secret v
   - Deployed indexers: environment variable `Syncfusion__LicenseKey`.
   - Without a key the Indexer logs a warning and Syncfusion runs in evaluation mode.
 - **Packages:** come from nuget.org; no installer download is needed. The Linux "Download for Linux" installer on the account page isn't used.
-- **Linux native bits:** `Syncfusion.PdfToImageConverter.Net` ships PDFium for linux/win/osx itself, but its SkiaSharp dependency needs `SkiaSharp.NativeAssets.Linux.NoDependencies` pinned to the same SkiaSharp version Syncfusion resolves (4.150.1 for 35.2.12). Check `obj/project.assets.json` for the SkiaSharp version when bumping Syncfusion.
+- **Use `Syncfusion.PdfToImageConverter.Net.Core`, not `.Net`:** `Syncfusion.PDF.OCR.Net.Core` depends on the `.Net.Core` one, and having both defines `PdfToImageConverter` twice (CS0433).
+- **Linux native bits:** `Syncfusion.PdfToImageConverter.Net.Core` ships PDFium for linux/win/osx itself, but its SkiaSharp dependency needs `SkiaSharp.NativeAssets.Linux.NoDependencies` pinned to the same SkiaSharp version Syncfusion resolves (4.150.1 for 35.2.12). Check `obj/project.assets.json` for the SkiaSharp version when bumping Syncfusion.
 - **Verified** with generated samples (text PDF, image-only PDF, password-protected PDF, .docx, .xlsx, .pptx): content and metadata extracted with no evaluation watermark text; the image-only PDF was rendered, described by the vision model, then embedded.
+- **OCR:** `Syncfusion.PDF.OCR.Net.Core` bundles Tesseract (4.0 and 5.0 builds for win/linux/osx, copied under `runtimes/` at build) and `eng.traineddata` only. Other languages: download `<lang>.traineddata` (e.g. `tam` from github.com/tesseract-ocr/tessdata) into a folder, set `Indexer:OcrTessDataPath` to it (copy `eng.traineddata` there too) and `Indexer:OcrLanguage` to e.g. `eng+tam`.
+- **OCR on Linux needs a `libdl` shim:** Syncfusion's OCR imports `libdl` by its unversioned name, which glibc 2.34+ only installs with `glibc-devel`. `OcrService` maps it to `libdl.so.2` with a `NativeLibrary.SetDllImportResolver` on the OCR assembly, so no system change is needed. The symptom without it: `DllNotFoundException: Unable to load shared library 'libdl'`.
+
+### Per-machine prerequisites for the Indexer
+- **ffmpeg + ffprobe** for video metadata and frames. Linux: distro package (`dnf install ffmpeg`). Windows: e.g. `winget install Gyan.FFmpeg`, then either have them on PATH or set `Indexer:FFmpegBinaryFolder` to the folder holding `ffmpeg.exe`/`ffprobe.exe`. Missing ffmpeg isn't fatal: videos are indexed by name only, with a warning in the log.
+- **Syncfusion license key** set on the machine (user-secrets or `Syncfusion__LicenseKey`).
+- Nothing else: Tesseract, PDFium and SkiaSharp natives come from NuGet.
+- **Verified 2026-11-19 on Linux** with generated samples: an image with printed text and the same image as a scanned PDF (OCR read both exactly), a 3000×4000 JPEG with EXIF rotation/camera/GPS (stored upright as 4000×3000, metadata extracted), a tagged MP3, an MP4 with a title tag (frame grabbed and described). Semantic queries "electricity bill payment", "family celebration video", "devotional music" each ranked the matching file first.
