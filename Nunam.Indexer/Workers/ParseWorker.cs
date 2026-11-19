@@ -106,7 +106,7 @@ namespace Nunam.Indexer.Workers
             file.FileCreatedAt = info.CreationTimeUtc;
             file.FileModifiedAt = info.LastWriteTimeUtc;
             file.IndexedAt = DateTimeOffset.UtcNow;
-            file.Content = outcome.Content;
+            file.Content = CleanContent(outcome.Content);
             file.Metadata = outcome.Metadata;
             file.PreviewImage = outcome.PreviewImage;
             if (!outcome.NeedsDescribe)
@@ -142,6 +142,10 @@ namespace Nunam.Indexer.Workers
 
             queue.Enqueue(job.MachineId, job.Path, outcome.NeedsDescribe ? IndexJobKind.Describe : IndexJobKind.Embed);
         }
+
+        /// <summary>Postgres text rejects NUL, and the full-text trigger rejects oversized content.</summary>
+        private string? CleanContent(string? content) =>
+            string.IsNullOrWhiteSpace(content) ? null : Truncate(content.Replace("\0", string.Empty), _options.MaxContentChars);
 
         private static void Fail(IndexJob job, string error)
         {

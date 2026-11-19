@@ -31,6 +31,10 @@ builder.Services.AddSingleton<PathFilter>();
 builder.Services.AddSingleton<FileTypeDetector>();
 builder.Services.AddSingleton<ParserSelector>();
 builder.Services.AddSingleton<IFileParser, TextParser>();
+builder.Services.AddSingleton<IFileParser, PdfParser>();
+builder.Services.AddSingleton<IFileParser, WordParser>();
+builder.Services.AddSingleton<IFileParser, ExcelParser>();
+builder.Services.AddSingleton<IFileParser, PowerPointParser>();
 builder.Services.AddSingleton<IFileParser, ImageParser>();
 builder.Services.AddSingleton<IFileParser, FallbackParser>();
 
@@ -43,4 +47,17 @@ builder.Services.AddHostedService<WatcherWorker>();
 builder.Services.AddHostedService<ParseWorker>();
 
 var host = builder.Build();
+
+// Unlicensed, Syncfusion still parses but stamps evaluation notices into its output.
+var syncfusionKey = builder.Configuration["Syncfusion:LicenseKey"];
+if (string.IsNullOrWhiteSpace(syncfusionKey))
+{
+    host.Services.GetRequiredService<ILogger<Program>>()
+        .LogWarning("Syncfusion:LicenseKey is not set; document parsing runs unlicensed");
+}
+else
+{
+    Syncfusion.Licensing.SyncfusionLicenseProvider.RegisterLicense(syncfusionKey);
+}
+
 host.Run();

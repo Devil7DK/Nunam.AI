@@ -30,9 +30,7 @@ namespace Nunam.Indexer.Parsing
             }
 
             var content = await File.ReadAllTextAsync(file.FullName, cancellationToken);
-
-            // Postgres text columns reject NUL; a stray one would fail the whole upsert.
-            return new ParseOutcome { Content = content.Replace("\0", string.Empty) };
+            return new ParseOutcome { Content = content };
         }
     }
 }

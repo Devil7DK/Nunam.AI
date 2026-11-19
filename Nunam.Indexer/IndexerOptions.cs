@@ -31,6 +31,12 @@ namespace Nunam.Indexer
         /// <summary>Images larger than this are not stored as a preview (so not sent to the vision model).</summary>
         public int MaxPreviewMb { get; set; } = 8;
 
+        /// <summary>
+        /// Extracted content is cut to this many characters. Postgres refuses a tsvector over 1 MB,
+        /// which the full-text trigger builds from this column.
+        /// </summary>
+        public int MaxContentChars { get; set; } = 500_000;
+
         /// <summary>Parse jobs claimed per poll.</summary>
         public int ParseBatchSize { get; set; } = 8;
 
