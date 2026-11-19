@@ -1,0 +1,50 @@
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
+using Nunam.Core.Data;
+using Nunam.Core.Entities;
+
+namespace Nunam.Indexer.Indexing
+{
+    /// <summary>
+    /// Upserts this host's <see cref="Machine"/> row and stamps <see cref="MachineContext"/> at
+    /// startup. Registered as the first hosted service so its awaited <see cref="StartAsync"/>
+    /// completes — and <c>MachineContext</c> is populated — before the scan/watch/parse workers begin.
+    /// </summary>
+    public class MachineInitializer(
+        IServiceScopeFactory scopeFactory,
+        MachineContext context,
+        IOptions<IndexerOptions> options,
+        ILogger<MachineInitializer> logger) : IHostedService
+    {
+        private readonly IndexerOptions _options = options.Value;
+
+        public async Task StartAsync(CancellationToken cancellationToken)
+        {
+            var hostname = Environment.MachineName;
+            var name = string.IsNullOrWhiteSpace(_options.MachineName) ? hostname : _options.MachineName!;
+
+            using var scope = scopeFactory.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<NunamDbContext>();
+
+            var machine = await db.Machines.FirstOrDefaultAsync(m => m.Hostname == hostname, cancellationToken);
+            if (machine is null)
+            {
+                machine = new Machine { Name = name, Hostname = hostname, LastSeen = DateTimeOffset.UtcNow };
+                db.Machines.Add(machine);
+                logger.LogInformation("Registered new machine {Name} ({Hostname})", name, hostname);
+            }
+            else
+            {
+                machine.Name = name;
+                machine.LastSeen = DateTimeOffset.UtcNow;
+            }
+
+            await db.SaveChangesAsync(cancellationToken);
+            context.Set(machine.Id, machine.Name, hostname);
+
+            logger.LogInformation("Machine identity resolved: {MachineId}", machine.Id);
+        }
+
+        public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    }
+}
