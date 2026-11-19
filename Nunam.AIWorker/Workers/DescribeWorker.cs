@@ -73,8 +73,8 @@ namespace Nunam.AIWorker.Workers
                         continue;
                     }
 
-                    var mediaType = MediaTypes.FromExtension(
-                        file.Extension ?? Path.GetExtension(file.FileName));
+                    var mediaType = MediaTypes.Detect(
+                        file.PreviewImage, file.Extension ?? Path.GetExtension(file.FileName));
 
                     file.Description = await ai.DescribeImageAsync(
                         file.PreviewImage, mediaType, cancellationToken: cancellationToken);
