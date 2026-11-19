@@ -1,6 +1,15 @@
-@Nunam.API_HostAddress = http://localhost:5033
+@host = http://localhost:5033
 
-GET {{Nunam.API_HostAddress}}/weatherforecast/
-Accept: application/json
+GET {{host}}/api/search?q=land documents
 
 ###
+GET {{host}}/api/search?q=bill&mode=keyword&type=document
+
+###
+GET {{host}}/api/search?type=image&limit=10
+
+###
+GET {{host}}/api/status
+
+###
+GET {{host}}/api/machines

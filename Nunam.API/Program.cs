@@ -18,6 +18,8 @@ builder.Services.AddDbContext<NunamDbContext>(opt => opt
 
 builder.Services.AddNunamAI(builder.Configuration);
 builder.Services.AddScoped<SearchService>();
+builder.Services.AddSingleton<ThumbnailService>();
+builder.Services.AddMemoryCache(o => o.SizeLimit = 64 * 1024 * 1024);
 
 builder.Services.ConfigureHttpJsonOptions(o =>
     o.SerializerOptions.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase)));
@@ -46,5 +48,7 @@ if (app.Environment.IsDevelopment())
 }
 
 app.MapSearchEndpoints();
+app.MapFileEndpoints();
+app.MapStatusEndpoints();
 
 app.Run();
