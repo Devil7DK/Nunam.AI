@@ -28,8 +28,27 @@ namespace Nunam.Indexer
         /// <summary>Files larger than this are indexed for metadata only — their content is not read.</summary>
         public int MaxFileSizeMb { get; set; } = 32;
 
-        /// <summary>Images larger than this are not stored as a preview (so not sent to the vision model).</summary>
+        /// <summary>Images larger than this get metadata only: no OCR, no preview, no describe.</summary>
         public int MaxPreviewMb { get; set; } = 8;
+
+        /// <summary>Previews are scaled down so their longer edge is at most this many pixels.</summary>
+        public int PreviewMaxEdgePx { get; set; } = 1568;
+
+        /// <summary>Run OCR on images and on PDFs that have no text layer.</summary>
+        public bool EnableOcr { get; set; } = true;
+
+        /// <summary>
+        /// Tesseract language code(s), e.g. <c>eng</c> or <c>eng+tam</c>. Each needs a
+        /// <c>.traineddata</c> file in the tessdata folder; only <c>eng</c> ships with Syncfusion.
+        /// </summary>
+        public string OcrLanguage { get; set; } = "eng";
+
+        /// <summary>Tessdata folder; defaults to the one Syncfusion copies next to the binaries.</summary>
+        public string? OcrTessDataPath { get; set; }
+
+        /// <summary>Scanned PDFs are OCRed up to this many pages.</summary>
+        public int OcrMaxPdfPages { get; set; } = 20;
+
 
         /// <summary>
         /// Extracted content is cut to this many characters. Postgres refuses a tsvector over 1 MB,

@@ -30,6 +30,7 @@ builder.Services.AddSingleton<PathFilter>();
 // Parsing pipeline. Registration order matters: specialized parsers first, fallback last.
 builder.Services.AddSingleton<FileTypeDetector>();
 builder.Services.AddSingleton<ParserSelector>();
+builder.Services.AddSingleton<OcrService>();
 builder.Services.AddSingleton<IFileParser, TextParser>();
 builder.Services.AddSingleton<IFileParser, PdfParser>();
 builder.Services.AddSingleton<IFileParser, WordParser>();

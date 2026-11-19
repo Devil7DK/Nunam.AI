@@ -8,10 +8,10 @@ using Syncfusion.PdfToImageConverter;
 namespace Nunam.Indexer.Parsing
 {
     /// <summary>
-    /// Extracts the text of every page. A PDF with almost no text is most likely a scan, so its first
-    /// page is rendered as the preview and sent to the vision model instead.
+    /// Extracts the text of every page. A PDF with almost no text is most likely a scan: its first page
+    /// is rendered as the preview for the vision model, and its pages are OCRed for text.
     /// </summary>
-    public class PdfParser(IOptions<IndexerOptions> options, ILogger<PdfParser> logger) : IFileParser
+    public class PdfParser(IOptions<IndexerOptions> options, OcrService ocr, ILogger<PdfParser> logger) : IFileParser
     {
         private const int ScannedTextThreshold = 50;
         private readonly IndexerOptions _options = options.Value;
@@ -41,13 +41,7 @@ namespace Nunam.Indexer.Parsing
 
             using (document)
             {
-                var text = new StringBuilder();
-                foreach (PdfLoadedPage page in document.Pages)
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    text.AppendLine(page.ExtractText());
-                    if (text.Length >= _options.MaxContentChars) break;
-                }
+                var text = ExtractText(document, cancellationToken);
 
                 var info = document.DocumentInformation;
                 var metadata = ParseMetadata.ToJson(
@@ -56,13 +50,17 @@ namespace Nunam.Indexer.Parsing
                     ("author", info.Author),
                     ("subject", info.Subject));
 
-                var content = text.ToString().Trim();
+                var content = text;
                 if (content.Length >= ScannedTextThreshold || document.Pages.Count == 0)
                 {
                     return Task.FromResult(new ParseOutcome { Content = content, Metadata = metadata });
                 }
 
-                var preview = RenderFirstPage(stream, file);
+                var preview = RenderFirstPage(file);
+                if (ocr.AddTextLayer(document, file.FullName))
+                {
+                    content = ExtractText(document, cancellationToken);
+                }
                 return Task.FromResult(new ParseOutcome
                 {
                     Content = content,
@@ -73,11 +71,25 @@ namespace Nunam.Indexer.Parsing
             }
         }
 
-        private byte[]? RenderFirstPage(Stream stream, FileInfo file)
+        private string ExtractText(PdfLoadedDocument document, CancellationToken cancellationToken)
+        {
+            var text = new StringBuilder();
+            foreach (PdfLoadedPage page in document.Pages)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                text.AppendLine(page.ExtractText());
+                if (text.Length >= _options.MaxContentChars) break;
+            }
+
+            return text.ToString().Trim();
+        }
+
+        /// <summary>Uses its own stream: disposing the converter closes the stream it loaded.</summary>
+        private byte[]? RenderFirstPage(FileInfo file)
         {
             try
             {
-                stream.Position = 0;
+                using var stream = file.OpenRead();
                 using var converter = new PdfToImageConverter();
                 converter.Load(stream);
                 using var image = converter.Convert(0, false, true);
