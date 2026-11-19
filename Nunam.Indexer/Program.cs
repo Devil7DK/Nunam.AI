@@ -37,6 +37,7 @@ builder.Services.AddSingleton<IFileParser, WordParser>();
 builder.Services.AddSingleton<IFileParser, ExcelParser>();
 builder.Services.AddSingleton<IFileParser, PowerPointParser>();
 builder.Services.AddSingleton<IFileParser, ImageParser>();
+builder.Services.AddSingleton<IFileParser, AudioParser>();
 builder.Services.AddSingleton<IFileParser, FallbackParser>();
 
 // Resolve this machine's identity before any worker runs.

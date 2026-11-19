@@ -25,6 +25,7 @@
     <PackageReference Include="Syncfusion.PdfToImageConverter.Net.Core" Version="35.2.12" />
     <PackageReference Include="Syncfusion.Presentation.Net.Core" Version="35.2.12" />
     <PackageReference Include="Syncfusion.XlsIO.Net.Core" Version="35.2.12" />
+    <PackageReference Include="TagLibSharp" Version="2.3.0" />
   </ItemGroup>
 
   <ItemGroup>
