@@ -70,9 +70,23 @@ namespace Nunam.API.Services
             ]);
 
             var sql = query.Length == 0 ? BrowseSql : SearchSql;
+
+            // An HNSW scan returns at most hnsw.ef_search rows (default 40), fewer still when filters
+            // drop some, so it is raised to the candidate count and allowed to keep scanning. SET LOCAL
+            // keeps the change inside this transaction instead of leaking into the pooled connection.
+            await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+            if (useSemantic)
+            {
+                var efSearch = Math.Clamp(_options.CandidatesPerSide, 40, 1000);
+                await db.Database.ExecuteSqlRawAsync(
+                    $"SET LOCAL hnsw.ef_search = {efSearch}; SET LOCAL hnsw.iterative_scan = relaxed_order",
+                    cancellationToken);
+            }
+
             var rows = await db.Database
                 .SqlQueryRaw<SearchRow>(sql, [.. parameters])
                 .ToListAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
 
             var results = rows.Select(r => new SearchResult(
                 r.Id, r.FileName, r.Path, r.Machine, Enum.Parse<FileType>(r.FileType), r.Extension, r.SizeBytes,

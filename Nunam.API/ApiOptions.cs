@@ -6,7 +6,8 @@ namespace Nunam.API
 
         /// <summary>
         /// How many top hits each side (keyword, semantic) contributes before they're fused. Pages past
-        /// this depth come back empty, so it also caps <c>total</c>.
+        /// this depth come back empty, so it also caps <c>total</c>. Also used as the HNSW
+        /// <c>ef_search</c>, which pgvector caps at 1000.
         /// </summary>
         public int CandidatesPerSide { get; set; } = 200;
 
