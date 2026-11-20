@@ -52,6 +52,8 @@ See the commands at the top of `deploy/indexer/nunam-indexer.service`: publish t
 
 On start the indexer registers the machine, scans every watch path and queues each new or changed file; files deleted while it was off are dropped. After that it follows changes as they happen. Files become keyword-searchable as soon as they're parsed, and searchable by meaning once the AI worker has embedded them — the status line in the UI shows how far it has got.
 
+Only admins see the new machine at first. To let others search it, open *Index status* in the UI and use *Share* on its row; make the machine's main user an owner so they can share it themselves.
+
 ## Removing a machine
 
 Stop and remove the service (`sc.exe delete Nunam.Indexer`), then delete its rows; files and jobs go with the machine:

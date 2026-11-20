@@ -599,13 +599,35 @@ GET /api/files/{id}            # Details: metadata JSON, description, first 20 0
 GET /api/files/{id}/preview    # Stored preview image (JPEG/PNG); ?size=256 returns a thumbnail (longer edge ≤ size, 32–1568)
                                #   Thumbnails are made on demand and kept in an in-memory cache (64 MB); ETag + 304 supported
 GET /api/status                # Totals by type, described/embedded counts, job counts by kind/status, last 20 failures, machines
-GET /api/machines              # Machines with file count and last indexed time
-GET /healthz                   # 200 when the database is reachable
+GET /api/machines              # Machines with file count, last indexed time and whether the user may share it
+GET /healthz                   # 200 when the database is reachable (no sign-in needed)
 ```
 
-`POST /api/index/trigger` (from the original plan) is **not implemented**: the API runs as the read-only `nunam_api` DB user (§12 #7). Re-indexing a path today = insert a `Parse` job, or touch the file so the watcher picks it up.
+Everything above covers only the machines the signed-in user can see (all of them for admins); a file on another machine answers 404.
 
-CORS: `Cors:AllowedOrigins` (GET only); `*` allows any origin. Development allows `http://localhost:5173` (Vite).
+### Accounts and sharing
+
+```
+GET    /api/auth/state                      # { setupRequired, user } — no sign-in needed
+POST   /api/auth/setup                      # { code, userName, displayName, password } — first admin, only while no account exists
+POST   /api/auth/sign-in                    # { userName, password } — sets the session cookie
+POST   /api/auth/sign-out[?everywhere=true]
+POST   /api/auth/password                   # { currentPassword, newPassword } — signs other devices out
+GET    /api/auth/sessions                   # own sessions; DELETE /api/auth/sessions/{id}; POST /api/auth/sessions/end-others
+GET    /api/users/directory                 # enabled people (id, user name, display name), for the share picker
+GET    /api/users                           # admin: accounts
+POST   /api/users                           # admin: { userName, displayName, role, temporaryPassword }
+PATCH  /api/users/{id}                      # admin: { displayName?, role?, disabled? } — not on yourself; one enabled admin must remain
+POST   /api/users/{id}/password             # admin: { temporaryPassword } — must be changed at next sign-in
+DELETE /api/users/{id}                      # admin
+GET    /api/machines/{id}/access            # owners and admins
+PUT    /api/machines/{id}/access/{userId}   # { role: owner|member }
+DELETE /api/machines/{id}/access/{userId}
+```
+
+Every endpoint except `/api/auth/state`, setup, sign-in and `/healthz` needs a session; until a temporary password is changed only sign-out and the password change work (403 otherwise). State-changing requests must send `X-Nunam-Request: 1` and a JSON body. Sign-in, setup and password changes share a per-address rate limit (`Auth:SignInAttemptsPerMinute`, 10). No CORS: the UI is always served from the API's origin (Vite proxy in development, nginx in Compose).
+
+`POST /api/index/trigger` (from the original plan) is **not implemented**. Re-indexing a path today = insert a `Parse` job, or touch the file so the watcher picks it up.
 
 ---
 
@@ -732,16 +754,16 @@ Database logins are created by `docker/postgres/10-roles.sh` on first start of t
 ### Phase 6 — Accounts, access control and hardening
 Decided: per-user accounts, per-machine access, LAN only for now (§12 #4, #10).
 - [x] Accounts — `users` (role `Admin`/`Member`, hashed password, disabled flag, lockout counters), `user_sessions` (only a SHA-256 of the session token is stored), `machine_access` (user × machine, role `Owner`/`Member`)
-- [ ] DB privileges — the API login may write only the three auth tables; indexer and AI-worker logins lose all access to them (an indexed desktop holds its indexer password, and must not be able to read hashes or forge a session)
+- [x] DB privileges — the API login may write only the three auth tables; indexer and AI-worker logins lose all access to them (an indexed desktop holds its indexer password, and must not be able to read hashes or forge a session). Checked on a fresh Compose stack: both get `permission denied` on `users`; the API still can't write `files`
 - [x] First-run setup — while no user exists the API logs a one-time setup code; whoever enters it creates the first admin. Afterwards registration is closed and admins create accounts with a temporary password that must be changed at first sign-in
 - [x] Sessions — opaque random token in an `HttpOnly`, `SameSite=Strict` cookie (`Secure` over HTTPS), idle and absolute expiry, sign out (this device / everywhere), list own sessions
 - [x] Sign-in protection — rate limit per client address, lockout per account after repeated failures, same response and timing for unknown users and wrong passwords
 - [x] CSRF — state-changing requests need a custom header (forces a CORS preflight that the API never grants cross-origin) on top of `SameSite=Strict`
 - [x] Authorization everywhere — every `/api` endpoint except setup/sign-in requires a session; search, file details, previews, status and machine lists only cover machines the user can see. Admins see all machines
 - [x] Sharing — admins assign a machine's owner; owners add or remove people and choose owner or member; members can search the machine but not share it (API: `/api/machines/{id}/access`; tested with 59 end-to-end checks covering all of the above)
-- [ ] Security headers — CSP, `X-Content-Type-Options`, `Referrer-Policy`, `frame-ancestors 'none'`, `Permissions-Policy` from nginx and the API
-- [ ] UI — setup, sign-in and forced password change screens; account menu (change password, sessions, sign out); admin user management; machine sharing in the index status dialog; 401 returns to sign-in
-- [ ] Docs — first-run setup, adding people, sharing machines, recovering a lost admin password from the database
+- [x] Security headers — CSP, `X-Content-Type-Options`, `Referrer-Policy`, `frame-ancestors 'none'`, `Permissions-Policy` from nginx and the API. nginx overwrites `X-Forwarded-For`, so a spoofed one can't dodge the sign-in rate limit (checked)
+- [x] UI — setup, sign-in and forced password change screens; account menu (change password, sessions, sign out); admin user management; machine sharing in the index status dialog; 401 returns to sign-in
+- [x] Docs — first-run setup, adding people, sharing machines, recovering a lost admin password from the database
 
 ### Rollout — after features, testing and review are done
 - [ ] Deploy the homelab stack (`docs/deployment.md`)
@@ -757,7 +779,7 @@ Decided: per-user accounts, per-machine access, LAN only for now (§12 #4, #10).
 | 4 | Authentication for the web UI? | Per-user accounts stored in Postgres with server-side sessions (Phase 6). No external identity provider: the homelab has none. LAN only for now; remote access would add two-factor sign-in first |
 | 5 | Should thumbnails be stored in DB or generated on demand? | Generated on demand and cached in memory |
 | 6 | What to do with encrypted PDFs? | Skip content, set `metadata = {"encrypted": true}`; the file stays searchable by name. `Description` is left to the AI worker |
-| 7 | Should the Indexer write directly to DB or via API? | **Direct DB write** — avoids HTTP overhead during bulk indexing, indexer uses a dedicated low-privilege `nunam_indexer` DB user (INSERT/UPDATE/SELECT only). API uses a separate `nunam_api` read-only user. AIWorker uses `nunam_aiworker` with INSERT/UPDATE/SELECT on `index_jobs` + `files` only. |
+| 7 | Should the Indexer write directly to DB or via API? | **Direct DB write** — avoids HTTP overhead during bulk indexing, indexer uses a dedicated low-privilege `nunam_indexer` DB user (INSERT/UPDATE/SELECT only). API uses a separate `nunam_api` user: read-only on the index, read-write on the account tables (`users`, `user_sessions`, `machine_access`), which the indexer and AI-worker logins can't touch. AIWorker uses `nunam_aiworker` with INSERT/UPDATE/SELECT on `index_jobs` + `files` only. |
 | 8 | One `IndexJob` table or many? | **One table, `Kind` column** discriminates Parse / Describe / Embed. Same shape, single set of migrations, per-kind queues fall out of `WHERE Kind=...`. Inspired by Immich's BullMQ queue separation but adapted to Postgres-as-queue. |
 | 9 | Where does Ollama live? | **Homelab GPU container** (`192.168.7.113:11434`, `ollama/ollama:rocm`). Originally planned for the Gaming PC. AIWorker still tolerates it being unreachable: jobs stay `Pending`. |
 | 10 | Who sees which machine's files? | Users see only machines they've been given. An admin assigns each machine an owner; owners share it with others as owner or member. Admins see every machine. New machines are visible to admins only until someone is given access |

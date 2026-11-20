@@ -1,7 +1,8 @@
 #!/bin/bash
 # Runs once, when the data volume is first initialised. Creates the pgvector extension and one login
 # per service: the indexers and the AI worker write, the API only reads. The owner role
-# ($POSTGRES_USER) runs migrations, so default privileges cover the tables it creates later.
+# ($POSTGRES_USER) runs migrations, so default privileges cover the tables it creates later; the
+# accounts migration then lets the API manage the account tables and shuts the other logins out of them.
 set -euo pipefail
 
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" \

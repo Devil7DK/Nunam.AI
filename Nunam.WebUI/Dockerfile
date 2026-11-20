@@ -8,4 +8,5 @@ RUN npm run build
 
 FROM nginx:1.29-alpine
 COPY Nunam.WebUI/nginx.conf /etc/nginx/conf.d/default.conf
+COPY Nunam.WebUI/security-headers.conf /etc/nginx/snippets/security-headers.conf
 COPY --from=build /app/dist /usr/share/nginx/html

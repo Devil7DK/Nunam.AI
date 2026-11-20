@@ -45,6 +45,8 @@ services:
     restart: unless-stopped
     environment:
       ConnectionStrings__Postgres: Host=postgres;Database=${POSTGRES_DB};Username=nunam_api;Password=${NUNAM_API_PASSWORD}
+      # Only nginx can reach the API (it isn't published), so its X-Forwarded-* headers can be trusted.
+      Auth__TrustForwardedHeaders: "true"
       AI__Provider: ${AI_PROVIDER:-Ollama}
       AI__BaseUrl: ${AI_BASE_URL}
       AI__EmbeddingModel: ${AI_EMBEDDING_MODEL:-bge-m3}
