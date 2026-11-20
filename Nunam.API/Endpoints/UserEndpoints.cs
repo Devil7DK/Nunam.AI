@@ -75,6 +75,8 @@ namespace Nunam.API.Endpoints
             Guid id, UpdateUserRequest request, NunamDbContext db, SessionService sessions, ClaimsPrincipal admin,
             ILogger<SessionService> logger, CancellationToken cancellationToken)
         {
+            await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+            await LockAdminChangesAsync(db, cancellationToken);
             var user = await db.Users.AsTracking().FirstOrDefaultAsync(u => u.Id == id, cancellationToken);
             if (user is null) return TypedResults.NotFound();
 
@@ -109,6 +111,7 @@ namespace Nunam.API.Endpoints
             if (errors.Count > 0) return TypedResults.ValidationProblem(errors);
 
             await db.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
             if (user.Disabled) await sessions.EndAllAsync(user.Id, except: null, cancellationToken);
 
             logger.LogInformation("{Admin} updated account {UserName} (role {Role}, disabled {Disabled})",
@@ -155,21 +158,38 @@ namespace Nunam.API.Endpoints
                 return TypedResults.ValidationProblem(new Dictionary<string, string[]> { ["id"] = ["You can't delete your own account."] });
             }
 
+            await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+            await LockAdminChangesAsync(db, cancellationToken);
             var user = await db.Users.FirstOrDefaultAsync(u => u.Id == id, cancellationToken);
             if (user is null) return TypedResults.NotFound();
 
+            if (user.Role == UserRole.Admin && !user.Disabled && !await AnotherAdminAsync(db, user.Id, cancellationToken))
+            {
+                return TypedResults.ValidationProblem(new Dictionary<string, string[]> { ["id"] = ["At least one enabled admin must remain."] });
+            }
+
             await db.Users.Where(u => u.Id == id).ExecuteDeleteAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
             logger.LogInformation("{Admin} deleted account {UserName}", admin.Identity!.Name, user.UserName);
             return TypedResults.NoContent();
         }
+
+        /// <summary>
+        /// Serializes changes that can remove an admin: two admins demoting or deleting each other at once
+        /// would each see the other still enabled and together leave none.
+        /// </summary>
+        private static Task LockAdminChangesAsync(NunamDbContext db, CancellationToken cancellationToken) =>
+            db.Database.ExecuteSqlAsync($"SELECT pg_advisory_xact_lock(hashtext('nunam:admins'))", cancellationToken);
 
         /// <summary>Whether saving <paramref name="user"/> as it now stands would leave no enabled admin.</summary>
         private static async Task<bool> WouldLeaveNoAdminAsync(NunamDbContext db, User user, CancellationToken cancellationToken)
         {
             if (user.Role == UserRole.Admin && !user.Disabled) return false;
-            return !await db.Users.AnyAsync(
-                u => u.Id != user.Id && u.Role == UserRole.Admin && !u.Disabled, cancellationToken);
+            return !await AnotherAdminAsync(db, user.Id, cancellationToken);
         }
+
+        private static Task<bool> AnotherAdminAsync(NunamDbContext db, Guid userId, CancellationToken cancellationToken) =>
+            db.Users.AnyAsync(u => u.Id != userId && u.Role == UserRole.Admin && !u.Disabled, cancellationToken);
 
         private static UserSummary ToSummary(User u) =>
             new(u.Id, u.UserName, u.DisplayName, u.Role, u.Disabled, u.MustChangePassword, u.LastSignIn, u.Created);
