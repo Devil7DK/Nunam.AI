@@ -39,7 +39,18 @@ namespace Nunam.Indexer.Indexing
                 machine.LastSeen = DateTimeOffset.UtcNow;
             }
 
-            await db.SaveChangesAsync(cancellationToken);
+            try
+            {
+                await db.SaveChangesAsync(cancellationToken);
+            }
+            catch (DbUpdateException ex) when (ex.InnerException is Npgsql.PostgresException { SqlState: Npgsql.PostgresErrorCodes.UniqueViolation })
+            {
+                // Row-level security hides machines registered by other logins, so the lookup above missed it.
+                logger.LogCritical("Machine {Hostname} is already registered under another database login. "
+                    + "Use that machine's login, or have an admin delete the old machine entry", hostname);
+                throw;
+            }
+
             context.Set(machine.Id, machine.Name, hostname);
 
             logger.LogInformation("Machine identity resolved: {MachineId}", machine.Id);
