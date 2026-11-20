@@ -729,6 +729,20 @@ Database logins are created by `docker/postgres/10-roles.sh` on first start of t
 - [x] Add index health dashboard to UI — clicking the status line opens per-machine counts and last activity, the job queue by stage and status, and the 20 most recent failures with their errors
 - [x] Document setup steps for adding a new machine — `docs/adding-a-machine.md`, `docs/deployment.md`
 
+### Phase 6 — Accounts, access control and hardening
+Decided: per-user accounts, per-machine access, LAN only for now (§12 #4, #10).
+- [x] Accounts — `users` (role `Admin`/`Member`, hashed password, disabled flag, lockout counters), `user_sessions` (only a SHA-256 of the session token is stored), `machine_access` (user × machine, role `Owner`/`Member`)
+- [ ] DB privileges — the API login may write only the three auth tables; indexer and AI-worker logins lose all access to them (an indexed desktop holds its indexer password, and must not be able to read hashes or forge a session)
+- [x] First-run setup — while no user exists the API logs a one-time setup code; whoever enters it creates the first admin. Afterwards registration is closed and admins create accounts with a temporary password that must be changed at first sign-in
+- [x] Sessions — opaque random token in an `HttpOnly`, `SameSite=Strict` cookie (`Secure` over HTTPS), idle and absolute expiry, sign out (this device / everywhere), list own sessions
+- [x] Sign-in protection — rate limit per client address, lockout per account after repeated failures, same response and timing for unknown users and wrong passwords
+- [x] CSRF — state-changing requests need a custom header (forces a CORS preflight that the API never grants cross-origin) on top of `SameSite=Strict`
+- [x] Authorization everywhere — every `/api` endpoint except setup/sign-in requires a session; search, file details, previews, status and machine lists only cover machines the user can see. Admins see all machines
+- [x] Sharing — admins assign a machine's owner; owners add or remove people and choose owner or member; members can search the machine but not share it (API: `/api/machines/{id}/access`; tested with 59 end-to-end checks covering all of the above)
+- [ ] Security headers — CSP, `X-Content-Type-Options`, `Referrer-Policy`, `frame-ancestors 'none'`, `Permissions-Policy` from nginx and the API
+- [ ] UI — setup, sign-in and forced password change screens; account menu (change password, sessions, sign out); admin user management; machine sharing in the index status dialog; 401 returns to sign-in
+- [ ] Docs — first-run setup, adding people, sharing machines, recovering a lost admin password from the database
+
 ### Rollout — after features, testing and review are done
 - [ ] Deploy the homelab stack (`docs/deployment.md`)
 - [ ] Install the Indexer on the desktop and laptop (`docs/adding-a-machine.md`)
@@ -740,12 +754,13 @@ Database logins are created by `docker/postgres/10-roles.sh` on first start of t
 | 1 | Should the Indexer also run on homelab for NFS/SMB shares? | Yes — run a separate Indexer instance on homelab pointed at mounted shares |
 | 2 | How to handle files >500MB (large videos)? | Extract metadata only, skip content extraction |
 | 3 | Should embedding be regenerated on every file change? | Only when the AI input changed: a new preview image re-describes; a changed name, content or description re-embeds. The parse result is compared with the stored row, so there is no hash column |
-| 4 | Authentication for the web UI? | None initially (LAN-only), add basic auth in Phase 5 if needed |
+| 4 | Authentication for the web UI? | Per-user accounts stored in Postgres with server-side sessions (Phase 6). No external identity provider: the homelab has none. LAN only for now; remote access would add two-factor sign-in first |
 | 5 | Should thumbnails be stored in DB or generated on demand? | Generated on demand and cached in memory |
 | 6 | What to do with encrypted PDFs? | Skip content, set `metadata = {"encrypted": true}`; the file stays searchable by name. `Description` is left to the AI worker |
 | 7 | Should the Indexer write directly to DB or via API? | **Direct DB write** — avoids HTTP overhead during bulk indexing, indexer uses a dedicated low-privilege `nunam_indexer` DB user (INSERT/UPDATE/SELECT only). API uses a separate `nunam_api` read-only user. AIWorker uses `nunam_aiworker` with INSERT/UPDATE/SELECT on `index_jobs` + `files` only. |
 | 8 | One `IndexJob` table or many? | **One table, `Kind` column** discriminates Parse / Describe / Embed. Same shape, single set of migrations, per-kind queues fall out of `WHERE Kind=...`. Inspired by Immich's BullMQ queue separation but adapted to Postgres-as-queue. |
 | 9 | Where does Ollama live? | **Homelab GPU container** (`192.168.7.113:11434`, `ollama/ollama:rocm`). Originally planned for the Gaming PC. AIWorker still tolerates it being unreachable: jobs stay `Pending`. |
+| 10 | Who sees which machine's files? | Users see only machines they've been given. An admin assigns each machine an owner; owners share it with others as owner or member. Admins see every machine. New machines are visible to admins only until someone is given access |
 
 ---
 

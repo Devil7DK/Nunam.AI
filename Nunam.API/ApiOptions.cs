@@ -28,12 +28,4 @@ namespace Nunam.API
         /// </summary>
         public double SemanticRelativeMargin { get; set; } = 0.05;
     }
-
-    public class CorsOptions
-    {
-        public const string SectionName = "Cors";
-
-        /// <summary>Origins allowed to call the API from a browser. <c>*</c> allows any origin.</summary>
-        public string[] AllowedOrigins { get; set; } = [];
-    }
 }

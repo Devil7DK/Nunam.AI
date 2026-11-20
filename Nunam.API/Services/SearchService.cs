@@ -30,7 +30,8 @@ namespace Nunam.API.Services
         private const string MatchEnd = "\uE001";
         private readonly SearchOptions _options = options.Value;
 
-        public async Task<SearchResponse> SearchAsync(ParsedSearch search, CancellationToken cancellationToken)
+        /// <param name="machineIds">Machines whose files may be returned; <c>null</c> for all.</param>
+        public async Task<SearchResponse> SearchAsync(ParsedSearch search, Guid[]? machineIds, CancellationToken cancellationToken)
         {
             var (request, mode, type) = search;
             var query = request.Q?.Trim() ?? string.Empty;
@@ -52,7 +53,7 @@ namespace Nunam.API.Services
             var useKeyword = query.Length > 0 && mode != SearchMode.Semantic;
             var useSemantic = embedding is not null;
 
-            var parameters = FilterParameters(request, type);
+            var parameters = FilterParameters(request, type, machineIds);
             parameters.AddRange(
             [
                 new NpgsqlParameter("q", NpgsqlDbType.Text) { Value = query },
@@ -117,7 +118,7 @@ namespace Nunam.API.Services
         [GeneratedRegex(@"\s+")]
         private static partial Regex Whitespace();
 
-        private static List<NpgsqlParameter> FilterParameters(SearchRequest request, FileType? type)
+        private static List<NpgsqlParameter> FilterParameters(SearchRequest request, FileType? type, Guid[]? machineIds)
         {
             var extensions = request.Ext?
                 .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
@@ -128,6 +129,7 @@ namespace Nunam.API.Services
             [
                 new NpgsqlParameter("file_type", NpgsqlDbType.Text) { Value = (object?)type?.ToString() ?? DBNull.Value },
                 new NpgsqlParameter("machine", NpgsqlDbType.Text) { Value = (object?)request.Machine ?? DBNull.Value },
+                new NpgsqlParameter("machine_ids", NpgsqlDbType.Array | NpgsqlDbType.Uuid) { Value = (object?)machineIds ?? DBNull.Value },
                 new NpgsqlParameter("extensions", NpgsqlDbType.Array | NpgsqlDbType.Text)
                 {
                     Value = extensions is { Length: > 0 } ? extensions : DBNull.Value,
@@ -155,6 +157,7 @@ namespace Nunam.API.Services
                 FROM files f
                 JOIN machines m ON m.id = f.machine_id
                 WHERE (@file_type IS NULL OR f.file_type = @file_type)
+                  AND (@machine_ids IS NULL OR f.machine_id = ANY(@machine_ids))
                   AND (@machine IS NULL OR lower(m.name) = lower(@machine))
                   AND (@extensions IS NULL OR lower(f.extension) = ANY(@extensions))
                   AND (@from IS NULL OR f.file_modified_at >= @from)

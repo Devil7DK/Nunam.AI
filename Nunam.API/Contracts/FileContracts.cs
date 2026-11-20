@@ -28,7 +28,8 @@ namespace Nunam.API.Contracts
         string Hostname,
         DateTimeOffset? LastSeen,
         int FileCount,
-        DateTimeOffset? LastIndexedAt);
+        DateTimeOffset? LastIndexedAt,
+        bool CanShare);
 
     public record IndexStatus(
         int TotalFiles,

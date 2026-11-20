@@ -1,3 +1,5 @@
+using System.Security.Claims;
+using Nunam.API.Auth;
 using Nunam.API.Contracts;
 using Nunam.API.Services;
 
@@ -14,14 +16,16 @@ namespace Nunam.API.Endpoints
         }
 
         private static async Task<IResult> SearchAsync(
-            [AsParameters] SearchRequest request, SearchService search, CancellationToken cancellationToken)
+            [AsParameters] SearchRequest request, ClaimsPrincipal user, MachineScope scope, SearchService search,
+            CancellationToken cancellationToken)
         {
             var parsed = SearchRequestParser.Parse(request, out var errors);
             if (errors.Count > 0) return TypedResults.ValidationProblem(errors);
 
             try
             {
-                return TypedResults.Ok(await search.SearchAsync(parsed, cancellationToken));
+                var machineIds = await scope.VisibleMachineIdsAsync(user, cancellationToken);
+                return TypedResults.Ok(await search.SearchAsync(parsed, machineIds, cancellationToken));
             }
             catch (SemanticSearchUnavailableException ex)
             {

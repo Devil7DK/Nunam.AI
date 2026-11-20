@@ -1,7 +1,9 @@
+using System.Security.Claims;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Net.Http.Headers;
+using Nunam.API.Auth;
 using Nunam.API.Contracts;
 using Nunam.API.Services;
 using Nunam.Core.Data;
@@ -24,10 +26,11 @@ namespace Nunam.API.Endpoints
         }
 
         private static async Task<Results<Ok<FileDetails>, NotFound>> GetFileAsync(
-            Guid id, NunamDbContext db, CancellationToken cancellationToken)
+            Guid id, ClaimsPrincipal user, MachineScope scope, NunamDbContext db, CancellationToken cancellationToken)
         {
+            var machineIds = await scope.VisibleMachineIdsAsync(user, cancellationToken);
             var file = await db.Files
-                .Where(f => f.Id == id)
+                .Where(f => f.Id == id && (machineIds == null || machineIds.Contains(f.MachineId)))
                 .Select(f => new
                 {
                     f.Id, f.FileName, f.Path, Machine = f.Machine.Name, f.FileType, f.Extension, f.SizeBytes,
@@ -50,11 +53,12 @@ namespace Nunam.API.Endpoints
         }
 
         private static async Task<IResult> GetPreviewAsync(
-            Guid id, int? size, HttpContext http, NunamDbContext db, ThumbnailService thumbnails,
-            CancellationToken cancellationToken)
+            Guid id, int? size, HttpContext http, ClaimsPrincipal user, MachineScope scope, NunamDbContext db,
+            ThumbnailService thumbnails, CancellationToken cancellationToken)
         {
+            var machineIds = await scope.VisibleMachineIdsAsync(user, cancellationToken);
             var file = await db.Files
-                .Where(f => f.Id == id)
+                .Where(f => f.Id == id && (machineIds == null || machineIds.Contains(f.MachineId)))
                 .Select(f => new { f.Extension, f.PreviewImage, f.LastModified })
                 .FirstOrDefaultAsync(cancellationToken);
 
