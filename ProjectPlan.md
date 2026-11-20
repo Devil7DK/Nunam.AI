@@ -550,6 +550,7 @@ GET /api/search
   &ext=.pdf,docx                      (leading dot optional)
   &from=2024-01-01&to=2024-12-31      (file modified date, both inclusive, UTC days)
   &limit=20 (1–100) &offset=0
+                                      (q: at most 500 characters and 50 distinct words)
 
 Response:
 {
@@ -771,7 +772,7 @@ From the first full security audit (2026-11-20; report kept outside the repo). S
 - [x] Per-machine database logins with row-level security [medium] — `nunam_indexer` is a group; each machine gets its own login (`docker/add-indexer-login.sh`). `machines.db_role` defaults to the registering login, and policies on `machines`, `files` and `index_jobs` limit an indexer login to that machine. Grants live in migrations instead of default privileges; the AI worker can update files and jobs but not add files or read machines; the API only reads; no service login can touch migration history
 - [x] Bounded parser work [medium] — images read their header size first and get metadata only above `Indexer:MaxImageMegapixels` (100); JPEG/WebP decode at reduced scale; scanned-PDF pages render straight at preview size; Excel reads populated cells only; each parse has a deadline (`Indexer:ParseTimeoutSeconds`, 300); jobs that keep stopping a worker fail after `MaxAttempts` (3) claims; shutdown returns in-flight jobs without using an attempt. Checked: a 1 MB 16000×16000 PNG, a 305-byte 7200 pt PDF and a 1.5 KB A1:XFD1048576 workbook together peaked at 333 MB (was over 3 GB)
 - [x] AI queue keeps moving [medium] — failures are classified by outcome: no answer or 502/503/504/429 is an outage (job back to Pending, attempt refunded, worker backs off); another server error or a client timeout counts against that job and fails it after `AIWorker:MaxAttempts` (3); a refusal fails it at once. A rejected embed batch is retried file by file. Checked against a local stand-in model: a poisoned image failed after 3 tries while the next machine's image was described; a poisoned embed input failed alone; with no backend, jobs stayed Pending with no attempts used
-- [ ] API work limits [low/medium] — search text length and term caps plus a statement timeout; thumbnails check dimensions before decoding and use fixed sizes
+- [x] API work limits [low/medium] — search text is capped at 500 characters and 50 distinct words, and each search runs under `Search:StatementTimeoutSeconds` (15; 503 when hit). Thumbnail sizes round up to 128/256/512/1024/1568, previews over 16 MP are refused instead of decoded, and JPEGs decode at reduced scale. `to=9999-12-31` is a validation error instead of a 500
 - [ ] Sign-in lockout counter updated atomically [unverified by the audit]
 
 ### Rollout — after features, testing and review are done

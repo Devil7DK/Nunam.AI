@@ -76,6 +76,10 @@ namespace Nunam.API.Services
             // drop some, so it is raised to the candidate count and allowed to keep scanning. SET LOCAL
             // keeps the change inside this transaction instead of leaking into the pooled connection.
             await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+            // Ranking and highlighting run over whole documents; a ceiling keeps one request from holding
+            // a database connection and CPU for long. SET takes no bind parameters; the value is an integer.
+            await db.Database.ExecuteSqlRawAsync(FormattableString.Invariant(
+                $"SET LOCAL statement_timeout = {Math.Max(1, _options.StatementTimeoutSeconds) * 1000}"), cancellationToken);
             if (useSemantic)
             {
                 // SET takes no bind parameters; the value is a clamped integer.

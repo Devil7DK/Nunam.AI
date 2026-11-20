@@ -31,6 +31,11 @@ namespace Nunam.API.Endpoints
             {
                 return TypedResults.Problem(ex.Message, statusCode: StatusCodes.Status503ServiceUnavailable);
             }
+            catch (Npgsql.PostgresException ex) when (ex.SqlState == Npgsql.PostgresErrorCodes.QueryCanceled && !cancellationToken.IsCancellationRequested)
+            {
+                return TypedResults.Problem("The search took too long. Try fewer or more specific words.",
+                    statusCode: StatusCodes.Status503ServiceUnavailable);
+            }
         }
     }
 }

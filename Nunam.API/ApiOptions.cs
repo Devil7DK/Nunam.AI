@@ -19,6 +19,9 @@ namespace Nunam.API
 
         public int MaxLimit { get; set; } = 100;
 
+        /// <summary>A search running longer than this is stopped by the database (503).</summary>
+        public int StatementTimeoutSeconds { get; set; } = 15;
+
         /// <summary>
         /// Semantic hits are kept only within this distance of the best hit's cosine similarity.
         /// Similarity has no absolute meaning across queries (a right answer can score 0.52 for one

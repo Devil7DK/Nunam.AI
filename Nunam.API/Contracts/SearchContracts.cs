@@ -27,9 +27,31 @@ namespace Nunam.API.Contracts
 
     public static class SearchRequestParser
     {
+        /// <summary>Every word goes into the full-text query evaluated against each result, so cost grows with it.</summary>
+        public const int MaxQueryChars = 500;
+        public const int MaxQueryTerms = 50;
+
         public static ParsedSearch Parse(SearchRequest request, out Dictionary<string, string[]> errors)
         {
             errors = [];
+
+            if (request.Q is { } q)
+            {
+                if (q.Length > MaxQueryChars)
+                {
+                    errors["q"] = [$"Search text is limited to {MaxQueryChars} characters."];
+                }
+                else if (q.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)
+                    .Distinct(StringComparer.OrdinalIgnoreCase).Count() > MaxQueryTerms)
+                {
+                    errors["q"] = [$"Search text is limited to {MaxQueryTerms} words."];
+                }
+            }
+
+            if (request.To == DateOnly.MaxValue)
+            {
+                errors["to"] = ["'to' is out of range."];
+            }
             var mode = SearchMode.Hybrid;
             FileType? type = null;
 
