@@ -5,11 +5,12 @@ Each machine with files runs its own `Nunam.Indexer`. It reads files locally and
 ## Prerequisites
 
 - **.NET 10** — the SDK to publish (or build elsewhere and copy the output plus the runtime).
+- **Visual C++ 2015–2022 x64 runtime** (Windows), for OCR: [vc_redist.x64.exe](https://aka.ms/vs/17/release/vc_redist.x64.exe). Most desktops already have it; a fresh install doesn't, and then scanned pages and photos are indexed without their text. The installer warns when it's missing.
 - **ffmpeg** with `ffprobe`, for video metadata and frames. Windows: `winget install Gyan.FFmpeg`. Linux: the distro package. Without it videos are still indexed by name.
 - **Network access** to the homelab database port (5432 by default).
 - **The Syncfusion license key** (Community license, Document SDK, version 35). Bumping the Syncfusion packages to a new major version needs a new key.
 
-Tesseract (OCR), PDFium and SkiaSharp come with the NuGet packages; nothing else to install.
+Tesseract (OCR), PDFium and SkiaSharp come with the NuGet packages.
 
 ## Settings
 
@@ -32,8 +33,10 @@ The file holds secrets; the Windows installer restricts it to Administrators and
 From the repository root, in an elevated PowerShell:
 
 ```powershell
-.\deploy\indexer\install-windows.ps1
+powershell -ExecutionPolicy Bypass -File .\deploy\indexer\install-windows.ps1
 ```
+
+`-ExecutionPolicy Bypass` applies to that run only; Windows' default policy blocks unsigned scripts.
 
 The first run publishes to `C:\Program Files\Nunam\Indexer`, creates `appsettings.Local.json` and opens it in Notepad. Fill it in and run the script again: it installs the `Nunam.Indexer` service (automatic, delayed start, restarts on failure) and starts it. Later runs update the binaries and keep the settings.
 

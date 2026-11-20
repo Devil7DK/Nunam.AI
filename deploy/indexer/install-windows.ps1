@@ -5,9 +5,10 @@
 
 .DESCRIPTION
     Run from the repository root in an elevated PowerShell:
-        .\deploy\indexer\install-windows.ps1
+        powershell -ExecutionPolicy Bypass -File .\deploy\indexer\install-windows.ps1
     Re-running it updates the binaries and restarts the service; appsettings.Local.json is kept.
-    Needs the .NET 10 SDK to publish, and ffmpeg on PATH (or Indexer:FFmpegBinaryFolder) for video.
+    Needs the .NET 10 SDK to publish, the Visual C++ 2015-2022 x64 runtime for OCR, and ffmpeg on
+    PATH (or Indexer:FFmpegBinaryFolder) for video.
 
 .PARAMETER InstallDir
     Where the indexer is installed. Defaults to C:\Program Files\Nunam\Indexer.
@@ -32,10 +33,19 @@ if ($existing -and $existing.Status -ne "Stopped") {
     $existing.WaitForStatus("Stopped", [TimeSpan]::FromSeconds(30))
 }
 
+# Tesseract and Leptonica link against it; without it every OCR call fails and files are indexed without recognized text.
+if (-not (Test-Path "$env:SystemRoot\System32\vcruntime140_1.dll")) {
+    Write-Warning "Visual C++ 2015-2022 x64 runtime not found; OCR will not work. Install it from https://aka.ms/vs/17/release/vc_redist.x64.exe"
+}
+
 Write-Host "Publishing to $InstallDir..."
+# Windows PowerShell turns a native command's stderr into a terminating error under "Stop" when output is redirected.
+$ErrorActionPreference = "Continue"
 dotnet publish (Join-Path $repoRoot "Nunam.Indexer\Nunam.Indexer.csproj") `
     -c Release -r win-x64 --self-contained false -o $InstallDir
-if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed" }
+$publishExit = $LASTEXITCODE
+$ErrorActionPreference = "Stop"
+if ($publishExit -ne 0) { throw "dotnet publish failed" }
 
 $localSettings = Join-Path $InstallDir "appsettings.Local.json"
 if (-not (Test-Path $localSettings)) {
@@ -46,7 +56,8 @@ if (-not (Test-Path $localSettings)) {
 }
 
 # The file holds the database password and the Syncfusion key: only Administrators and SYSTEM may read it.
-$acl = Get-Acl $localSettings
+# A fresh ACL, because a file copied in from elsewhere keeps explicit grants that dropping inheritance leaves behind.
+$acl = New-Object System.Security.AccessControl.FileSecurity
 $acl.SetAccessRuleProtection($true, $false)
 foreach ($identity in @("BUILTIN\Administrators", "NT AUTHORITY\SYSTEM")) {
     $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($identity, "FullControl", "Allow")))
