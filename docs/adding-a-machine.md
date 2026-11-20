@@ -40,7 +40,7 @@ powershell -ExecutionPolicy Bypass -File .\deploy\indexer\install-windows.ps1
 
 The first run publishes to `C:\Program Files\Nunam\Indexer`, creates `appsettings.Local.json` and opens it in Notepad. Fill it in and run the script again: it installs the `Nunam.Indexer` service (automatic, delayed start, restarts on failure) and starts it. Later runs update the binaries and keep the settings.
 
-The service runs as LocalSystem, which can read every local disk but not network shares. To index a share, install with `-Account DOMAIN\user` for an account that can reach it.
+The service runs as its own virtual account, `NT SERVICE\Nunam.Indexer`, which can read only what it is given: each run grants it read access to every watch path in `appsettings.Local.json` (so after adding a watch path, run the script again). A subfolder that blocks inherited permissions stays unreadable, and its files are logged as failed. The account can't reach network shares; to index a share, install with `-Account DOMAIN\user` for an account that can. `-Account LocalSystem` reads everything without grants, but then a flaw in a file parser would control the whole machine.
 
 Warnings and errors go to Event Viewer → Windows Logs → Application.
 
@@ -50,13 +50,13 @@ See the commands at the top of `deploy/indexer/nunam-indexer.service`: publish t
 
 ## What happens next
 
-On start the indexer registers the machine, scans every watch path and queues each new or changed file; files deleted while it was off are dropped. After that it follows changes as they happen. Files become keyword-searchable as soon as they're parsed, and searchable by meaning once the AI worker has embedded them — the status line in the UI shows how far it has got.
+On start the indexer registers the machine, scans every watch path and queues each new or changed file; files deleted while it was off, and files a removed watch path or a new exclude pattern no longer covers, are dropped. A watch path that is missing at start (an unplugged drive) keeps its entries. After that it follows changes as they happen. Files become keyword-searchable as soon as they're parsed, and searchable by meaning once the AI worker has embedded them — the status line in the UI shows how far it has got.
 
 Only admins see the new machine at first. To let others search it, open *Index status* in the UI and use *Share* on its row; make the machine's main user an owner so they can share it themselves.
 
 ## Removing a machine
 
-Stop and remove the service (`sc.exe delete Nunam.Indexer`), then delete its rows; files and jobs go with the machine:
+Stop and remove the service (`sc.exe delete Nunam.Indexer`) and, on Windows, the read grants (`icacls <watch path> /remove "NT SERVICE\Nunam.Indexer"` for each). Then delete its rows; files and jobs go with the machine:
 
 ```sql
 DELETE FROM machines WHERE name = 'laptop';

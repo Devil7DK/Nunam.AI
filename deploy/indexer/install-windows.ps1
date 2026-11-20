@@ -14,16 +14,19 @@
     Where the indexer is installed. Defaults to C:\Program Files\Nunam\Indexer.
 
 .PARAMETER Account
-    Service account. The default, LocalSystem, can read local disks but not network shares; to
-    index shares, run as a user account that can reach them (you will be asked for its password).
+    Service account. The default, the service's own virtual account NT SERVICE\Nunam.Indexer, reads
+    only what it is granted: the script grants it read access to each watch path. It can't reach
+    network shares; to index those, run as a user account that can (you will be asked for its
+    password). LocalSystem also works, but a flaw in a file parser would then control the machine.
 #>
 param(
     [string]$InstallDir = "$env:ProgramFiles\Nunam\Indexer",
-    [string]$Account = "LocalSystem"
+    [string]$Account = "NT SERVICE\Nunam.Indexer"
 )
 
 $ErrorActionPreference = "Stop"
 $serviceName = "Nunam.Indexer"
+$virtualAccount = "NT SERVICE\$serviceName"
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..")
 
 $existing = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
@@ -55,8 +58,40 @@ if (-not (Test-Path $localSettings)) {
     exit 1
 }
 
-# The file holds the database password and the Syncfusion key: only Administrators and SYSTEM may read it.
-# A fresh ACL, because a file copied in from elsewhere keeps explicit grants that dropping inheritance leaves behind.
+$exe = Join-Path $InstallDir "Nunam.Indexer.exe"
+if (-not $existing) {
+    Write-Host "Creating service $serviceName..."
+    New-Service -Name $serviceName -BinaryPathName "`"$exe`"" -DisplayName "Nunam Indexer" `
+        -Description "Indexes local files into the Nunam search index." -StartupType Automatic | Out-Null
+    # Delayed start keeps boot fast; restart after 1 minute if the process dies.
+    sc.exe config $serviceName start= delayed-auto | Out-Null
+    sc.exe failure $serviceName reset= 86400 actions= restart/60000/restart/60000/restart/300000 | Out-Null
+}
+
+# Set on every run, so re-running with another -Account moves an existing install over.
+$current = (Get-CimInstance Win32_Service -Filter "Name='$serviceName'").StartName
+if ($current -ne $Account) {
+    Write-Host "Running $serviceName as $Account (was $current)..."
+    if ($Account -eq $virtualAccount) {
+        sc.exe sidtype $serviceName unrestricted | Out-Null
+        $result = sc.exe config $serviceName obj= $Account
+    } elseif ($Account -eq "LocalSystem") {
+        $result = sc.exe config $serviceName obj= LocalSystem
+    } else {
+        $password = (Get-Credential -UserName $Account -Message "Password for the service account").GetNetworkCredential().Password
+        $result = sc.exe config $serviceName obj= $Account password= $password
+    }
+    if ($LASTEXITCODE -ne 0) { throw "Could not set the service account: $result" }
+}
+
+# A non-admin account can't register the event log source itself, and logging fails without it.
+if (-not [System.Diagnostics.EventLog]::SourceExists($serviceName)) {
+    New-EventLog -LogName Application -Source $serviceName
+}
+
+# The file holds the database password and the Syncfusion key: only Administrators, SYSTEM and the
+# service may read it. A fresh ACL, because a file copied in from elsewhere keeps explicit grants that
+# dropping inheritance leaves behind.
 $acl = New-Object System.Security.AccessControl.FileSecurity
 $acl.SetAccessRuleProtection($true, $false)
 foreach ($identity in @("BUILTIN\Administrators", "NT AUTHORITY\SYSTEM")) {
@@ -67,23 +102,21 @@ if ($Account -ne "LocalSystem") {
 }
 Set-Acl $localSettings $acl
 
-$exe = Join-Path $InstallDir "Nunam.Indexer.exe"
-if (-not $existing) {
-    Write-Host "Creating service $serviceName..."
-    $params = @{
-        Name           = $serviceName
-        BinaryPathName = "`"$exe`""
-        DisplayName    = "Nunam Indexer"
-        Description    = "Indexes local files into the Nunam search index."
-        StartupType    = "Automatic"
+if ($Account -ne "LocalSystem") {
+    $watchPaths = @((Get-Content $localSettings -Raw | ConvertFrom-Json).Indexer.WatchPaths) | Where-Object { $_ }
+    foreach ($path in $watchPaths) {
+        if (-not (Test-Path -LiteralPath $path -PathType Container)) {
+            Write-Warning "Watch path $path not found; once it exists, run this script again to grant $Account read access."
+            continue
+        }
+        # Inherited by everything below, except folders that block inheritance; those stay unreadable.
+        Write-Host "Granting $Account read access to $path..."
+        $ErrorActionPreference = "Continue"
+        $result = icacls $path /grant "${Account}:(OI)(CI)RX" /Q
+        $grantExit = $LASTEXITCODE
+        $ErrorActionPreference = "Stop"
+        if ($grantExit -ne 0) { Write-Warning "Could not grant access to ${path}: $result" }
     }
-    if ($Account -ne "LocalSystem") {
-        $params.Credential = Get-Credential -UserName $Account -Message "Password for the service account"
-    }
-    New-Service @params | Out-Null
-    # Delayed start keeps boot fast; restart after 1 minute if the process dies.
-    sc.exe config $serviceName start= delayed-auto | Out-Null
-    sc.exe failure $serviceName reset= 86400 actions= restart/60000/restart/60000/restart/300000 | Out-Null
 }
 
 Write-Host "Starting $serviceName..."
