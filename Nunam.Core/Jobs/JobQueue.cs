@@ -90,10 +90,10 @@ namespace Nunam.Core.Jobs
             db.IndexJobs.Add(new IndexJob { MachineId = machineId, Path = path, Kind = kind });
 
         /// <summary>
-        /// Enqueues a <see cref="IndexJobKind.Parse"/> job for the given file path unless an
-        /// unprocessed (<see cref="IndexJobStatus.Pending"/> or <see cref="IndexJobStatus.Processing"/>)
-        /// Parse job for it already exists — so a burst of filesystem events for one path collapses
-        /// to a single job. Returns <c>true</c> when a job was actually added.
+        /// Enqueues a <see cref="IndexJobKind.Parse"/> job for the given file path unless a
+        /// <see cref="IndexJobStatus.Pending"/> one already exists, so a burst of filesystem events for
+        /// one path collapses to a single job. A <see cref="IndexJobStatus.Processing"/> job doesn't
+        /// count: it may have read the file before this change. Returns <c>true</c> when a job was added.
         /// </summary>
         public async Task<bool> EnqueueParseIfAbsentAsync(
             Guid machineId, string path, CancellationToken cancellationToken = default)
@@ -102,7 +102,7 @@ namespace Nunam.Core.Jobs
                 j => j.MachineId == machineId
                     && j.Path == path
                     && j.Kind == IndexJobKind.Parse
-                    && (j.Status == IndexJobStatus.Pending || j.Status == IndexJobStatus.Processing),
+                    && j.Status == IndexJobStatus.Pending,
                 cancellationToken);
 
             if (alreadyQueued)
