@@ -8,6 +8,9 @@ namespace Nunam.Core.Data
         public DbSet<Machine> Machines => Set<Machine>();
         public DbSet<IndexedFile> Files => Set<IndexedFile>();
         public DbSet<IndexJob> IndexJobs => Set<IndexJob>();
+        public DbSet<User> Users => Set<User>();
+        public DbSet<UserSession> UserSessions => Set<UserSession>();
+        public DbSet<MachineAccess> MachineAccess => Set<MachineAccess>();
 
         protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
         {
@@ -63,6 +66,39 @@ namespace Nunam.Core.Data
                 e.HasOne(j => j.Machine)
                     .WithMany(m => m.Jobs)
                     .HasForeignKey(j => j.MachineId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            model.Entity<User>(e =>
+            {
+                e.HasIndex(u => u.UserName).IsUnique();
+                e.Property(u => u.Role).HasConversion<string>();
+            });
+
+            model.Entity<UserSession>(e =>
+            {
+                e.HasIndex(s => s.TokenHash).IsUnique();
+                e.HasIndex(s => s.UserId);
+
+                e.HasOne(s => s.User)
+                    .WithMany(u => u.Sessions)
+                    .HasForeignKey(s => s.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            model.Entity<MachineAccess>(e =>
+            {
+                e.HasIndex(a => new { a.UserId, a.MachineId }).IsUnique();
+                e.HasIndex(a => a.MachineId);
+                e.Property(a => a.Role).HasConversion<string>();
+
+                e.HasOne(a => a.Machine)
+                    .WithMany(m => m.Access)
+                    .HasForeignKey(a => a.MachineId)
+                    .OnDelete(DeleteBehavior.Cascade);
+                e.HasOne(a => a.User)
+                    .WithMany(u => u.MachineAccess)
+                    .HasForeignKey(a => a.UserId)
                     .OnDelete(DeleteBehavior.Cascade);
             });
         }

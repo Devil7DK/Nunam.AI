@@ -229,6 +229,165 @@ namespace Nunam.Core.Data.Migrations
                     b.ToTable("machines", (string)null);
                 });
 
+            modelBuilder.Entity("Nunam.Core.Entities.MachineAccess", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("Created")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created");
+
+                    b.Property<DateTimeOffset>("LastModified")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_modified");
+
+                    b.Property<Guid>("MachineId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("machine_id");
+
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("role");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_machine_access");
+
+                    b.HasIndex("MachineId")
+                        .HasDatabaseName("ix_machine_access_machine_id");
+
+                    b.HasIndex("UserId", "MachineId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_machine_access_user_id_machine_id");
+
+                    b.ToTable("machine_access", (string)null);
+                });
+
+            modelBuilder.Entity("Nunam.Core.Entities.User", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("Created")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created");
+
+                    b.Property<bool>("Disabled")
+                        .HasColumnType("boolean")
+                        .HasColumnName("disabled");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("display_name");
+
+                    b.Property<int>("FailedSignIns")
+                        .HasColumnType("integer")
+                        .HasColumnName("failed_sign_ins");
+
+                    b.Property<DateTimeOffset>("LastModified")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_modified");
+
+                    b.Property<DateTimeOffset?>("LastSignIn")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_sign_in");
+
+                    b.Property<DateTimeOffset?>("LockedUntil")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("locked_until");
+
+                    b.Property<bool>("MustChangePassword")
+                        .HasColumnType("boolean")
+                        .HasColumnName("must_change_password");
+
+                    b.Property<string>("PasswordHash")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("password_hash");
+
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("role");
+
+                    b.Property<string>("UserName")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("user_name");
+
+                    b.HasKey("Id")
+                        .HasName("pk_users");
+
+                    b.HasIndex("UserName")
+                        .IsUnique()
+                        .HasDatabaseName("ix_users_user_name");
+
+                    b.ToTable("users", (string)null);
+                });
+
+            modelBuilder.Entity("Nunam.Core.Entities.UserSession", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("Created")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
+                    b.Property<string>("IpAddress")
+                        .HasColumnType("text")
+                        .HasColumnName("ip_address");
+
+                    b.Property<DateTimeOffset>("LastModified")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_modified");
+
+                    b.Property<DateTimeOffset>("LastSeen")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_seen");
+
+                    b.Property<byte[]>("TokenHash")
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasColumnName("token_hash");
+
+                    b.Property<string>("UserAgent")
+                        .HasColumnType("text")
+                        .HasColumnName("user_agent");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_user_sessions");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique()
+                        .HasDatabaseName("ix_user_sessions_token_hash");
+
+                    b.HasIndex("UserId")
+                        .HasDatabaseName("ix_user_sessions_user_id");
+
+                    b.ToTable("user_sessions", (string)null);
+                });
+
             modelBuilder.Entity("Nunam.Core.Entities.IndexJob", b =>
                 {
                     b.HasOne("Nunam.Core.Entities.Machine", "Machine")
@@ -253,11 +412,53 @@ namespace Nunam.Core.Data.Migrations
                     b.Navigation("Machine");
                 });
 
+            modelBuilder.Entity("Nunam.Core.Entities.MachineAccess", b =>
+                {
+                    b.HasOne("Nunam.Core.Entities.Machine", "Machine")
+                        .WithMany("Access")
+                        .HasForeignKey("MachineId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_machine_access_machines_machine_id");
+
+                    b.HasOne("Nunam.Core.Entities.User", "User")
+                        .WithMany("MachineAccess")
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_machine_access_users_user_id");
+
+                    b.Navigation("Machine");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Nunam.Core.Entities.UserSession", b =>
+                {
+                    b.HasOne("Nunam.Core.Entities.User", "User")
+                        .WithMany("Sessions")
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_user_sessions_users_user_id");
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("Nunam.Core.Entities.Machine", b =>
                 {
+                    b.Navigation("Access");
+
                     b.Navigation("Files");
 
                     b.Navigation("Jobs");
+                });
+
+            modelBuilder.Entity("Nunam.Core.Entities.User", b =>
+                {
+                    b.Navigation("MachineAccess");
+
+                    b.Navigation("Sessions");
                 });
 #pragma warning restore 612, 618
         }

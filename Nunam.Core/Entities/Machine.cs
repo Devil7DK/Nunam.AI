@@ -8,5 +8,6 @@ namespace Nunam.Core.Entities
 
         public ICollection<IndexedFile> Files { get; set; } = [];
         public ICollection<IndexJob> Jobs { get; set; } = [];
+        public ICollection<MachineAccess> Access { get; set; } = [];
     }
 }
