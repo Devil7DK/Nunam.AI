@@ -17,5 +17,31 @@ Restart=on-failure
 RestartSec=30
 Environment=DOTNET_ENVIRONMENT=Production
 
+# Sandbox: the indexer only reads files and talks to Postgres. It sees the filesystem read-only
+# (watch paths under /home included) and writes only to its private /tmp (video frames).
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+CapabilityBoundingSet=
+UMask=0077
+# Not MemoryDenyWriteExecute: the .NET JIT needs writable+executable memory.
+
 [Install]
 WantedBy=multi-user.target
