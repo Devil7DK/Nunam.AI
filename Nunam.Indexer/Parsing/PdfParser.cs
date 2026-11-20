@@ -94,11 +94,13 @@ namespace Nunam.Indexer.Parsing
                 using var stream = file.OpenRead();
                 using var converter = new PdfToImageConverter();
                 converter.Load(stream);
-                using var image = converter.Convert(0, false, true);
+                // Rendered straight at preview size: the page's own size comes from the file and can be huge.
+                var edge = _options.PreviewMaxEdgePx;
+                using var image = converter.Convert(0, new Syncfusion.Drawing.SizeF(edge, edge), true, false, true);
                 using var buffer = new MemoryStream();
                 image.CopyTo(buffer);
 
-                return buffer.Length <= _options.MaxPreviewBytes ? buffer.ToArray() : null;
+                return PreviewImages.Create(buffer.ToArray(), edge, _options.MaxImagePixels)?.Bytes;
             }
             catch (Exception ex)
             {

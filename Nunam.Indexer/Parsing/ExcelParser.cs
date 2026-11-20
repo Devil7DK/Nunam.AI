@@ -34,18 +34,30 @@ namespace Nunam.Indexer.Parsing
                 sheetNames.Add(sheet.Name);
                 text.AppendLine(sheet.Name);
 
-                foreach (var row in sheet.UsedRange.Rows)
+                // Populated cells only: UsedRange spans the bounding box, which two far-apart cells in a
+                // tiny file can stretch to billions of empty cells.
+                var row = -1;
+                foreach (var cell in sheet.UsedCells)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
 
-                    var cells = row.Cells
-                        .Select(c => c.DisplayText)
-                        .Where(t => !string.IsNullOrWhiteSpace(t));
-                    var line = string.Join('\t', cells);
-                    if (line.Length > 0) text.AppendLine(line);
+                    var value = cell.DisplayText;
+                    if (string.IsNullOrWhiteSpace(value)) continue;
+
+                    if (cell.Row != row)
+                    {
+                        if (row != -1) text.AppendLine();
+                        row = cell.Row;
+                    }
+                    else
+                    {
+                        text.Append('\t');
+                    }
+                    text.Append(value);
 
                     if (text.Length >= _options.MaxContentChars) break;
                 }
+                if (row != -1) text.AppendLine();
 
                 if (text.Length >= _options.MaxContentChars) break;
             }

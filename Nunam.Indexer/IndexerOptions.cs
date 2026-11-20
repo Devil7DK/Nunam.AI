@@ -34,6 +34,15 @@ namespace Nunam.Indexer
         /// <summary>Previews are scaled down so their longer edge is at most this many pixels.</summary>
         public int PreviewMaxEdgePx { get; set; } = 1568;
 
+        /// <summary>
+        /// Images declaring more pixels than this get metadata only. Decoding allocates width × height ×
+        /// 4 bytes, and a file of a few MB can declare far more than that.
+        /// </summary>
+        public int MaxImageMegapixels { get; set; } = 100;
+
+        /// <summary>A single file's parse is abandoned (job failed) after this long.</summary>
+        public int ParseTimeoutSeconds { get; set; } = 300;
+
         /// <summary>Run OCR on images and on PDFs that have no text layer.</summary>
         public bool EnableOcr { get; set; } = true;
 
@@ -78,5 +87,6 @@ namespace Nunam.Indexer
 
         public long MaxFileSizeBytes => MaxFileSizeMb * 1024L * 1024L;
         public long MaxPreviewBytes => MaxPreviewMb * 1024L * 1024L;
+        public long MaxImagePixels => MaxImageMegapixels * 1_000_000L;
     }
 }

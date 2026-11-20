@@ -26,7 +26,14 @@ namespace Nunam.Indexer.Parsing
             }
 
             var bytes = await File.ReadAllBytesAsync(file.FullName, cancellationToken);
-            var preview = PreviewImages.Create(bytes, _options.PreviewMaxEdgePx);
+            if (PreviewImages.ReadSize(bytes) is { } size && (long)size.Width * size.Height > _options.MaxImagePixels)
+            {
+                logger.LogInformation("Skipping preview and OCR of {Path}: {Width}x{Height} is over the pixel limit",
+                    file.FullName, size.Width, size.Height);
+                return new ParseOutcome { Metadata = ToJson(exif, null) };
+            }
+
+            var preview = PreviewImages.Create(bytes, _options.PreviewMaxEdgePx, _options.MaxImagePixels);
 
             return new ParseOutcome
             {

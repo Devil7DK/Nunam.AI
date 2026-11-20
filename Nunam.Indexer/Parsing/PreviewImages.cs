@@ -11,23 +11,36 @@ namespace Nunam.Indexer.Parsing
     /// </summary>
     public static class PreviewImages
     {
-        /// <summary>Returns <c>null</c> when SkiaSharp can't decode the image (e.g. HEIC on Linux).</summary>
-        public static PreviewImage? Create(byte[] source, int maxEdge)
+        /// <summary>The pixel size an image declares in its header, or <c>null</c> when it can't be read.</summary>
+        public static (int Width, int Height)? ReadSize(byte[] source)
         {
             using var codec = SKCodec.Create(new SKMemoryStream(source));
-            if (codec is null) return null;
+            return codec is null ? null : (codec.Info.Width, codec.Info.Height);
+        }
 
-            using var decoded = SKBitmap.Decode(codec);
+        /// <summary>
+        /// Returns <c>null</c> when SkiaSharp can't decode the image (e.g. HEIC on Linux) or it declares
+        /// more than <paramref name="maxPixels"/>: decoding allocates the full size before scaling, and a
+        /// small, highly compressed file can declare gigabytes of pixels.
+        /// </summary>
+        public static PreviewImage? Create(byte[] source, int maxEdge, long maxPixels)
+        {
+            using var codec = SKCodec.Create(new SKMemoryStream(source));
+            if (codec is null || (long)codec.Info.Width * codec.Info.Height > maxPixels) return null;
+
+            using var decoded = DecodeNear(codec, maxEdge);
             if (decoded is null) return null;
+
+            var sideways = codec.EncodedOrigin is SKEncodedOrigin.RightTop or SKEncodedOrigin.LeftBottom;
+            var (width, height) = sideways ? (codec.Info.Height, codec.Info.Width) : (codec.Info.Width, codec.Info.Height);
 
             using var upright = ApplyOrigin(decoded, codec.EncodedOrigin);
             var image = upright ?? decoded;
-            var (width, height) = (image.Width, image.Height);
 
-            var scale = Math.Min(1.0, (double)maxEdge / Math.Max(width, height));
+            var scale = Math.Min(1.0, (double)maxEdge / Math.Max(image.Width, image.Height));
             using var resized = scale < 1.0
                 ? image.Resize(
-                    image.Info.WithSize((int)(width * scale), (int)(height * scale)),
+                    image.Info.WithSize((int)(image.Width * scale), (int)(image.Height * scale)),
                     new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.Linear))
                 : null;
 
@@ -36,6 +49,26 @@ namespace Nunam.Indexer.Parsing
             using var data = output.Encode(format, 85);
 
             return data is null ? null : new PreviewImage(data.ToArray(), width, height);
+        }
+
+        /// <summary>
+        /// Decodes at the smallest size the codec supports that is still at least <paramref name="maxEdge"/>
+        /// (JPEG and WebP can; PNG decodes at full size), which keeps memory near the preview size.
+        /// </summary>
+        private static SKBitmap? DecodeNear(SKCodec codec, int maxEdge)
+        {
+            var scale = Math.Min(1f, (float)maxEdge / Math.Max(codec.Info.Width, codec.Info.Height));
+            if (scale < 1f)
+            {
+                var size = codec.GetScaledDimensions(scale);
+                if (size.Width < codec.Info.Width && Math.Max(size.Width, size.Height) >= maxEdge)
+                {
+                    var scaled = SKBitmap.Decode(codec, codec.Info.WithSize(size.Width, size.Height));
+                    if (scaled is not null) return scaled;
+                }
+            }
+
+            return SKBitmap.Decode(codec);
         }
 
         /// <summary>Phones store photos sideways and record the rotation in EXIF; mirrored origins are left as-is.</summary>

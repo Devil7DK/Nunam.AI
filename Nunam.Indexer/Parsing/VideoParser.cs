@@ -68,7 +68,7 @@ namespace Nunam.Indexer.Parsing
                     .ProcessAsynchronously(true, ffOptions, cancellationToken);
 
                 var frame = await File.ReadAllBytesAsync(framePath, cancellationToken);
-                return PreviewImages.Create(frame, _options.PreviewMaxEdgePx)?.Bytes;
+                return PreviewImages.Create(frame, _options.PreviewMaxEdgePx, _options.MaxImagePixels)?.Bytes;
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {

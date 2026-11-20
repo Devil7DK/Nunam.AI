@@ -56,9 +56,26 @@ namespace Nunam.Indexer.Workers
 
             foreach (var job in jobs)
             {
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    ReturnUnfinished(job);
+                    continue;
+                }
+
+                using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                deadline.CancelAfter(TimeSpan.FromSeconds(_options.ParseTimeoutSeconds));
                 try
                 {
-                    await ProcessAsync(db, queue, detector, selector, job, cancellationToken);
+                    await ProcessAsync(db, queue, detector, selector, job, deadline.Token);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    ReturnUnfinished(job);
+                }
+                catch (OperationCanceledException) when (deadline.IsCancellationRequested)
+                {
+                    _logger.LogWarning("Parsing {Path} took longer than {Seconds}s; giving up on it", job.Path, _options.ParseTimeoutSeconds);
+                    Fail(job, $"Parsing took longer than {_options.ParseTimeoutSeconds} seconds.");
                 }
                 catch (Exception ex)
                 {
@@ -180,6 +197,13 @@ namespace Nunam.Indexer.Workers
         /// <summary>Postgres text rejects NUL, and the full-text trigger rejects oversized content.</summary>
         private string? CleanContent(string? content) =>
             string.IsNullOrWhiteSpace(content) ? null : Truncate(content.Replace("\0", string.Empty), _options.MaxContentChars);
+
+        /// <summary>Shutdown isn't the file's fault: the job goes back without using up an attempt.</summary>
+        private static void ReturnUnfinished(IndexJob job)
+        {
+            job.Status = IndexJobStatus.Pending;
+            job.Attempts = Math.Max(0, job.Attempts - 1);
+        }
 
         private static void Fail(IndexJob job, string error)
         {
