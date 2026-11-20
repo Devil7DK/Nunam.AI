@@ -68,10 +68,12 @@ Nunam is built for the LAN. The session cookie is marked `Secure` only when the 
 **Each indexed machine gets its own login**, created on the homelab with:
 
 ```bash
-docker/add-indexer-login.sh laptop          # prints the connection string for that machine
+docker/add-indexer-login.sh laptop          # prints the database certificate and the connection string
 ```
 
 Row-level security limits that login to the machine it registers: it cannot read, change or queue work for any other machine's files, so a leaked indexer password exposes only that machine's own index. The AI worker can update descriptions and embeddings but cannot add files; the API only reads. To retire a machine's login: `DROP ROLE nunam_idx_laptop;` after deleting the machine.
+
+**TLS.** `docker/postgres/20-tls.sh` gives Postgres a self-signed certificate (valid 10 years) when the volume is first initialised, and from then on every TCP login must use TLS; plain connections are refused. Indexers pin that certificate (`SSL Mode=VerifyCA`), so a machine on the LAN posing as the database can't collect their passwords. A volume created before this script existed has neither: run `docker compose -f docker/docker-compose.yml exec -u postgres postgres bash /docker-entrypoint-initdb.d/20-tls.sh`, then restart the stack.
 
 A login registers the machine on its first run. If the hostname is already registered under a different login (for example after recreating the login), the indexer stops with an error; delete the old machine row or reuse its login.
 

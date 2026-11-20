@@ -18,6 +18,7 @@ services:
       # Postgres 18 images keep data in a versioned folder under /var/lib/postgresql.
       - pgdata:/var/lib/postgresql
       - ./postgres/10-roles.sh:/docker-entrypoint-initdb.d/10-roles.sh:ro
+      - ./postgres/20-tls.sh:/docker-entrypoint-initdb.d/20-tls.sh:ro
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     healthcheck:
@@ -31,7 +32,7 @@ services:
       context: ..
       dockerfile: docker/migrations.Dockerfile
     environment:
-      NUNAM_MIGRATION_CONNECTION: Host=postgres;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}
+      NUNAM_MIGRATION_CONNECTION: Host=postgres;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD};SSL Mode=Require
     depends_on:
       postgres:
         condition: service_healthy
@@ -43,7 +44,7 @@ services:
       dockerfile: Nunam.API/Dockerfile
     restart: unless-stopped
     environment:
-      ConnectionStrings__Postgres: Host=postgres;Database=${POSTGRES_DB};Username=nunam_api;Password=${NUNAM_API_PASSWORD}
+      ConnectionStrings__Postgres: Host=postgres;Database=${POSTGRES_DB};Username=nunam_api;Password=${NUNAM_API_PASSWORD};SSL Mode=Require
       # Only nginx can reach the API (it isn't published), so its X-Forwarded-* headers can be trusted.
       Auth__TrustForwardedHeaders: "true"
       AI__Provider: ${AI_PROVIDER:-Ollama}
@@ -71,7 +72,7 @@ services:
       dockerfile: Nunam.AIWorker/Dockerfile
     restart: unless-stopped
     environment:
-      ConnectionStrings__Postgres: Host=postgres;Database=${POSTGRES_DB};Username=nunam_aiworker;Password=${NUNAM_AIWORKER_PASSWORD}
+      ConnectionStrings__Postgres: Host=postgres;Database=${POSTGRES_DB};Username=nunam_aiworker;Password=${NUNAM_AIWORKER_PASSWORD};SSL Mode=Require
       AI__Provider: ${AI_PROVIDER:-Ollama}
       AI__BaseUrl: ${AI_BASE_URL}
       AI__ChatModel: ${AI_CHAT_MODEL:-gemma4:12b-it-qat}

@@ -23,5 +23,18 @@ pg sh -c 'psql -v ON_ERROR_STOP=1 -q -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ro
 CREATE ROLE :"role" LOGIN PASSWORD :'pw' IN ROLE nunam_indexer;
 EOSQL
 
-echo "Created login $role. Put this in the machine's appsettings.Local.json (ConnectionStrings:Postgres):"
-echo "Host=$host;Port=$port;Database=$db;Username=$role;Password=$password"
+cert="$(pg sh -c 'cat "$PGDATA/server.crt"')"
+
+cat <<EOT
+Created login $role.
+
+1. Save the database's certificate as nunam-db.crt in the indexer's folder
+   (C:\Program Files\Nunam\Indexer on Windows, /opt/nunam/indexer on Linux):
+
+$cert
+
+2. Put this in the machine's appsettings.Local.json (ConnectionStrings:Postgres), with the full path
+   to that file; the indexer then refuses a server that doesn't hold the matching key:
+
+Host=$host;Port=$port;Database=$db;Username=$role;Password=$password;SSL Mode=VerifyCA;Root Certificate=<folder>/nunam-db.crt
+EOT
