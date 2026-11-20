@@ -20,7 +20,7 @@ namespace Nunam.Indexer.Indexing
         public bool Allows(string path, out string reason)
         {
             var full = Path.GetFullPath(path);
-            var root = _roots.FirstOrDefault(r => full.StartsWith(r + Path.DirectorySeparatorChar, PathComparison));
+            var root = RootOf(full);
             if (root is null)
             {
                 reason = "Path is outside this indexer's watch paths.";
@@ -48,6 +48,16 @@ namespace Nunam.Indexer.Indexing
             reason = "";
             return true;
         }
+
+        /// <summary>
+        /// Whether <paramref name="path"/> is under a watch root that can't be reached right now, such as
+        /// an unplugged drive: its files only look deleted.
+        /// </summary>
+        public bool IsUnderUnavailableRoot(string path) =>
+            RootOf(Path.GetFullPath(path)) is { } root && !Directory.Exists(root);
+
+        private string? RootOf(string fullPath) =>
+            _roots.FirstOrDefault(r => fullPath.StartsWith(r + Path.DirectorySeparatorChar, PathComparison));
 
         /// <summary>Symlinks, junctions and other reparse points.</summary>
         public static bool IsLink(FileSystemInfo entry) =>
