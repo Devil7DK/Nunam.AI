@@ -44,7 +44,7 @@ namespace Nunam.API.Endpoints
                 passwords, out var userName, out var displayName, passwordField: "temporaryPassword");
 
             var role = UserRole.Member;
-            if (request.Role is not null && !Enum.TryParse(request.Role, true, out role))
+            if (request.Role is not null && !EnumNames.TryParse(request.Role, out role))
             {
                 errors["role"] = ["Use admin or member."];
             }
@@ -90,7 +90,7 @@ namespace Nunam.API.Endpoints
 
             if (request.Role is not null)
             {
-                if (!Enum.TryParse<UserRole>(request.Role, true, out var role)) errors["role"] = ["Use admin or member."];
+                if (!EnumNames.TryParse<UserRole>(request.Role, out var role)) errors["role"] = ["Use admin or member."];
                 else if (role != user.Role && isSelf) errors["role"] = ["You can't change your own role."];
                 else user.Role = role;
             }

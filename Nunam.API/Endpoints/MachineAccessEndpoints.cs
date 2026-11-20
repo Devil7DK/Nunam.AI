@@ -42,7 +42,7 @@ namespace Nunam.API.Endpoints
         {
             if (!await scope.CanShareAsync(user, machineId, cancellationToken)) return TypedResults.NotFound();
 
-            if (!Enum.TryParse<MachineAccessRole>(request.Role, true, out var role))
+            if (!EnumNames.TryParse<MachineAccessRole>(request.Role, out var role))
             {
                 return TypedResults.ValidationProblem(new Dictionary<string, string[]> { ["role"] = ["Use owner or member."] });
             }

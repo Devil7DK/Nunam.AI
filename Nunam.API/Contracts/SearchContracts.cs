@@ -55,14 +55,14 @@ namespace Nunam.API.Contracts
             var mode = SearchMode.Hybrid;
             FileType? type = null;
 
-            if (!string.IsNullOrWhiteSpace(request.Mode) && !Enum.TryParse(request.Mode, true, out mode))
+            if (!string.IsNullOrWhiteSpace(request.Mode) && !EnumNames.TryParse(request.Mode, out mode))
             {
                 errors["mode"] = [$"Unknown mode '{request.Mode}'. Use {Names<SearchMode>()}."];
             }
 
             if (!string.IsNullOrWhiteSpace(request.Type))
             {
-                if (Enum.TryParse<FileType>(request.Type, true, out var parsed)) type = parsed;
+                if (EnumNames.TryParse<FileType>(request.Type, out var parsed)) type = parsed;
                 else errors["type"] = [$"Unknown type '{request.Type}'. Use {Names<FileType>()}."];
             }
 
