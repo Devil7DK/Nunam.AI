@@ -32,9 +32,10 @@ namespace Nunam.AIWorker.Workers
         {
             using var scope = scopeFactory.CreateScope();
             var queue = scope.ServiceProvider.GetRequiredService<JobQueue>();
-            var requeued = await queue.RequeueStaleAsync(
-                IndexJobKind.Describe, TimeSpan.FromMinutes(_options.StaleJobMinutes), cancellationToken: cancellationToken);
+            var (requeued, failed) = await queue.RecoverStaleAsync(
+                IndexJobKind.Describe, TimeSpan.FromMinutes(_options.StaleJobMinutes), _options.MaxAttempts, cancellationToken: cancellationToken);
             if (requeued > 0) _logger.LogWarning("Requeued {Count} stale Describe job(s)", requeued);
+            if (failed > 0) _logger.LogError("Gave up on {Count} Describe job(s) that stopped the worker {Max} times", failed, _options.MaxAttempts);
         }
 
         protected override async Task<PollResult> PollAsync(CancellationToken cancellationToken)

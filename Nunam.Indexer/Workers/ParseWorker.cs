@@ -34,9 +34,10 @@ namespace Nunam.Indexer.Workers
         {
             using var scope = scopeFactory.CreateScope();
             var queue = scope.ServiceProvider.GetRequiredService<JobQueue>();
-            var requeued = await queue.RequeueStaleAsync(
-                IndexJobKind.Parse, TimeSpan.FromMinutes(_options.StaleJobMinutes), machine.MachineId, cancellationToken);
+            var (requeued, failed) = await queue.RecoverStaleAsync(
+                IndexJobKind.Parse, TimeSpan.FromMinutes(_options.StaleJobMinutes), _options.MaxAttempts, machine.MachineId, cancellationToken);
             if (requeued > 0) _logger.LogWarning("Requeued {Count} stale Parse job(s)", requeued);
+            if (failed > 0) _logger.LogError("Gave up on {Count} Parse job(s) that stopped the worker {Max} times", failed, _options.MaxAttempts);
         }
 
         protected override async Task<PollResult> PollAsync(CancellationToken cancellationToken)

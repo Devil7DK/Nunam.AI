@@ -36,7 +36,7 @@ namespace Nunam.Core.Jobs
             return db.IndexJobs
                 .FromSqlInterpolated($"""
                     UPDATE index_jobs
-                    SET status = 'Processing', last_modified = now()
+                    SET status = 'Processing', last_modified = now(), attempts = attempts + 1
                     WHERE id IN (
                         SELECT id FROM index_jobs
                         WHERE kind = {kindName} AND status = 'Pending'
@@ -51,25 +51,37 @@ namespace Nunam.Core.Jobs
         }
 
         /// <summary>
-        /// Returns <see cref="IndexJobStatus.Processing"/> jobs that have not been touched for
-        /// <paramref name="staleAfter"/> to <see cref="IndexJobStatus.Pending"/>. A worker that
-        /// crashed or was killed mid-batch leaves its claimed rows in <c>Processing</c>; without
-        /// this they would never be picked up again. Returns the number of jobs requeued.
+        /// Recovers <see cref="IndexJobStatus.Processing"/> jobs untouched for <paramref name="staleAfter"/>:
+        /// a worker that crashed or was killed mid-batch leaves its claimed rows behind. Jobs already
+        /// claimed <paramref name="maxAttempts"/> times are failed instead of requeued, since a file that
+        /// kills the worker every time would otherwise crash it forever.
         /// </summary>
-        public Task<int> RequeueStaleAsync(
-            IndexJobKind kind, TimeSpan staleAfter, Guid? machineId = null, CancellationToken cancellationToken = default)
+        public async Task<StaleRecovery> RecoverStaleAsync(
+            IndexJobKind kind, TimeSpan staleAfter, int maxAttempts, Guid? machineId = null,
+            CancellationToken cancellationToken = default)
         {
             var cutoff = DateTimeOffset.UtcNow - staleAfter;
+            var stale = db.IndexJobs.Where(j => j.Kind == kind
+                && j.Status == IndexJobStatus.Processing
+                && j.LastModified < cutoff
+                && (machineId == null || j.MachineId == machineId));
 
-            return db.IndexJobs
-                .Where(j => j.Kind == kind
-                    && j.Status == IndexJobStatus.Processing
-                    && j.LastModified < cutoff
-                    && (machineId == null || j.MachineId == machineId))
+            var failed = await stale
+                .Where(j => j.Attempts >= maxAttempts)
+                .ExecuteUpdateAsync(s => s
+                    .SetProperty(j => j.Status, IndexJobStatus.Failed)
+                    .SetProperty(j => j.Error, "The worker stopped while handling this file " + maxAttempts + " times; giving up.")
+                    .SetProperty(j => j.LastModified, DateTimeOffset.UtcNow),
+                    cancellationToken);
+
+            var requeued = await stale
+                .Where(j => j.Attempts < maxAttempts)
                 .ExecuteUpdateAsync(s => s
                     .SetProperty(j => j.Status, IndexJobStatus.Pending)
                     .SetProperty(j => j.LastModified, DateTimeOffset.UtcNow),
                     cancellationToken);
+
+            return new StaleRecovery(requeued, failed);
         }
 
         /// <summary>
@@ -115,4 +127,6 @@ namespace Nunam.Core.Jobs
             return true;
         }
     }
+
+    public record StaleRecovery(int Requeued, int Failed);
 }

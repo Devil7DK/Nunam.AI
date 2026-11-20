@@ -73,6 +73,9 @@ namespace Nunam.Indexer
         /// <summary>A Parse job left in <c>Processing</c> longer than this is assumed abandoned and requeued.</summary>
         public int StaleJobMinutes { get; set; } = 30;
 
+        /// <summary>Claims per job before a job that keeps stopping the worker is failed.</summary>
+        public int MaxAttempts { get; set; } = 3;
+
         public long MaxFileSizeBytes => MaxFileSizeMb * 1024L * 1024L;
         public long MaxPreviewBytes => MaxPreviewMb * 1024L * 1024L;
     }

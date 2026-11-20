@@ -10,5 +10,8 @@ namespace Nunam.Core.Entities
         public IndexJobStatus Status { get; set; } = IndexJobStatus.Pending;
         public IndexJobStage Stage { get; set; } = IndexJobStage.None;
         public string? Error { get; set; }
+
+        /// <summary>How many times the job has been claimed; a worker that dies on it can't retry it forever.</summary>
+        public int Attempts { get; set; }
     }
 }
