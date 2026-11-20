@@ -85,21 +85,33 @@ namespace Nunam.AIWorker.Workers
                     job.Error = null;
                     queue.Enqueue(job.MachineId, job.Path, IndexJobKind.Embed);
                 }
-                catch (Exception ex) when (IsBackendUnreachable(ex))
-                {
-                    // Return this job and any not-yet-processed ones to the queue for a later retry.
-                    _logger.LogWarning(ex, "AI backend unreachable; returning {Count} Describe job(s) to the queue",
-                        jobs.Count - i);
-                    for (var j = i; j < jobs.Count; j++)
-                    {
-                        jobs[j].Status = IndexJobStatus.Pending;
-                    }
-                    backendDown = true;
-                    break; // returns PollResult.Backoff below
-                }
                 catch (Exception ex)
                 {
-                    // The model rejected this image; embed the file without a description.
+                    var failure = Classify(ex, cancellationToken);
+                    if (failure is BackendFailure.Outage or BackendFailure.Shutdown)
+                    {
+                        // Return this job and any not-yet-processed ones to the queue for a later retry.
+                        if (failure is BackendFailure.Outage)
+                        {
+                            _logger.LogWarning(ex, "AI backend unreachable; returning {Count} Describe job(s) to the queue",
+                                jobs.Count - i);
+                        }
+                        for (var j = i; j < jobs.Count; j++)
+                        {
+                            jobs[j].ReturnToQueue();
+                        }
+                        backendDown = failure is BackendFailure.Outage;
+                        break;
+                    }
+
+                    if (failure is BackendFailure.JobFailed && job.RetryOrFail(_options.MaxAttempts, ex.Message))
+                    {
+                        _logger.LogWarning(ex, "Describing {Path} failed (attempt {Attempt} of {Max}); will retry",
+                            job.Path, job.Attempts, _options.MaxAttempts);
+                        continue;
+                    }
+
+                    // The model rejected this image, or kept failing on it: embed the file without a description.
                     _logger.LogError(ex, "Describe job {JobId} failed", job.Id);
                     Fail(job, ex.Message);
                     queue.Enqueue(job.MachineId, job.Path, IndexJobKind.Embed);

@@ -83,28 +83,75 @@ namespace Nunam.AIWorker.Workers
                     batch[i].Job.Error = null;
                 }
             }
-            catch (Exception ex) when (IsBackendUnreachable(ex))
-            {
-                _logger.LogWarning(ex, "AI backend unreachable; returning {Count} Embed job(s) to the queue", batch.Count);
-                foreach (var (job, _, _) in batch)
-                {
-                    job.Status = IndexJobStatus.Pending;
-                }
-                await db.SaveChangesAsync(CancellationToken.None);
-                return PollResult.Backoff;
-            }
             catch (Exception ex)
             {
-                // A non-connectivity failure on the shared call fails the whole batch.
-                _logger.LogError(ex, "Embed batch of {Count} failed", batch.Count);
-                foreach (var (job, _, _) in batch)
+                var failure = Classify(ex, cancellationToken);
+                if (failure is BackendFailure.Outage or BackendFailure.Shutdown)
                 {
-                    Fail(job, ex.Message);
+                    if (failure is BackendFailure.Outage)
+                    {
+                        _logger.LogWarning(ex, "AI backend unreachable; returning {Count} Embed job(s) to the queue", batch.Count);
+                    }
+                    foreach (var (job, _, _) in batch)
+                    {
+                        job.ReturnToQueue();
+                    }
+                    await db.SaveChangesAsync(CancellationToken.None);
+                    return failure is BackendFailure.Outage ? PollResult.Backoff : PollResult.DidWork;
+                }
+
+                // One input can sink the shared call; embed one at a time so only that file's job fails.
+                _logger.LogWarning(ex, "Embed batch of {Count} failed; retrying each file on its own", batch.Count);
+                if (!await EmbedOneByOneAsync(ai, batch, cancellationToken))
+                {
+                    await db.SaveChangesAsync(CancellationToken.None);
+                    return PollResult.Backoff;
                 }
             }
 
             await db.SaveChangesAsync(CancellationToken.None);
             return PollResult.DidWork;
+        }
+
+        /// <summary>Returns false when the backend went away part-way; unfinished jobs are back in the queue.</summary>
+        private async Task<bool> EmbedOneByOneAsync(
+            IAIInferenceService ai, List<(IndexJob Job, IndexedFile File, string Input)> batch, CancellationToken cancellationToken)
+        {
+            for (var i = 0; i < batch.Count; i++)
+            {
+                var (job, file, input) = batch[i];
+                try
+                {
+                    file.Embedding = (await ai.EmbedDocumentsAsync([input], cancellationToken))[0];
+                    job.Status = IndexJobStatus.Done;
+                    job.Stage = IndexJobStage.Embed;
+                    job.Error = null;
+                }
+                catch (Exception ex)
+                {
+                    var failure = Classify(ex, cancellationToken);
+                    if (failure is BackendFailure.Outage or BackendFailure.Shutdown)
+                    {
+                        for (var j = i; j < batch.Count; j++)
+                        {
+                            batch[j].Job.ReturnToQueue();
+                        }
+                        return failure is BackendFailure.Shutdown;
+                    }
+
+                    if (failure is BackendFailure.JobFailed && job.RetryOrFail(_options.MaxAttempts, ex.Message))
+                    {
+                        _logger.LogWarning(ex, "Embedding {Path} failed (attempt {Attempt} of {Max}); will retry",
+                            job.Path, job.Attempts, _options.MaxAttempts);
+                        continue;
+                    }
+
+                    _logger.LogError(ex, "Embed job {JobId} for {Path} failed", job.Id, job.Path);
+                    Fail(job, ex.Message);
+                }
+            }
+
+            return true;
         }
 
         private string BuildInput(IndexedFile file)

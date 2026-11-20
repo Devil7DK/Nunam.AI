@@ -1,3 +1,4 @@
+using System.Net;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
@@ -113,17 +114,46 @@ namespace Nunam.Core.Jobs
             logger.LogInformation("{Worker} stopping", Name);
         }
 
-        /// <summary>True when the exception (or any inner) looks like a backend/network outage rather than a data problem.</summary>
-        protected static bool IsBackendUnreachable(Exception? ex) => ex switch
+        /// <summary>
+        /// What a failed backend call says about the job. Only a backend that gave no usable answer at
+        /// all is an outage; a server error or timeout on one input counts against that job, or a single
+        /// bad file would be retried at the head of the queue forever and block every machine behind it.
+        /// </summary>
+        protected static BackendFailure Classify(Exception ex, CancellationToken stoppingToken)
         {
-            null => false,
-            HttpRequestException => true,
-            TaskCanceledException => true,   // HttpClient timeout surfaces as this
-            TimeoutException => true,
-            _ => IsBackendUnreachable(ex.InnerException),
-        };
+            if (stoppingToken.IsCancellationRequested && ex is OperationCanceledException) return BackendFailure.Shutdown;
+            return Inspect(ex);
+
+            static BackendFailure Inspect(Exception? e) => e switch
+            {
+                null => BackendFailure.Rejected,
+                HttpRequestException { StatusCode: null } => BackendFailure.Outage,
+                HttpRequestException { StatusCode: HttpStatusCode.BadGateway or HttpStatusCode.ServiceUnavailable
+                    or HttpStatusCode.GatewayTimeout or HttpStatusCode.TooManyRequests } => BackendFailure.Outage,
+                HttpRequestException => BackendFailure.JobFailed,
+                // HttpClient.Timeout surfaces as a TaskCanceledException wrapping a TimeoutException.
+                TaskCanceledException { InnerException: TimeoutException } => BackendFailure.JobFailed,
+                TimeoutException => BackendFailure.JobFailed,
+                _ => Inspect(e.InnerException),
+            };
+        }
 
         protected static string Truncate(string value, int max) =>
             value.Length <= max ? value : value[..max];
+    }
+
+    public enum BackendFailure
+    {
+        /// <summary>No usable answer from the backend; the job is not to blame.</summary>
+        Outage,
+
+        /// <summary>The worker is stopping; the job is not to blame.</summary>
+        Shutdown,
+
+        /// <summary>A server error or timeout on this input: retry it a few times, then fail it.</summary>
+        JobFailed,
+
+        /// <summary>The backend refused this input: fail it now.</summary>
+        Rejected,
     }
 }
