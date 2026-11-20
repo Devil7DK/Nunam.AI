@@ -722,12 +722,16 @@ Database logins are created by `docker/postgres/10-roles.sh` on first start of t
 
 ### Phase 5 — Deployment & Hardening
 - [x] Finalize `docker-compose.yml` for homelab — `docker/docker-compose.yml` + migrations bundle image + nginx UI image + per-service DB logins; Ollama left out (it lives on the GPU machine). Tested end to end on this machine (§10)
-- [ ] Configure Indexer as Windows service on desktop and laptop — *partial*: `deploy/indexer/install-windows.ps1` tested end to end on a Windows 10 22H2 VM (install, update, service settings, settings-file ACL, parsing every file type incl. OCR and video, live watcher with renames and deletes). Windows needs the Visual C++ 2015–2022 x64 runtime for OCR; the installer warns without it. Still to run on the desktop and laptop
+- [x] Run the Indexer as a Windows service — `deploy/indexer/install-windows.ps1` tested end to end on a Windows 10 22H2 VM (install, update, service settings, settings-file ACL, parsing every file type incl. OCR and video, live watcher with renames and deletes). Windows needs the Visual C++ 2015–2022 x64 runtime for OCR; the installer warns without it
 - [x] Set up pgvector HNSW index tuning — build parameters left at pgvector's defaults (`m=16`, `ef_construction=64`; ample recall for a home index). The real problem was query-time: an HNSW scan returns at most `hnsw.ef_search` rows (default 40), so semantic search silently capped at 40 candidates once the index is used. Search now sets `hnsw.ef_search` to `Search:CandidatesPerSide` and `hnsw.iterative_scan = relaxed_order` per transaction (verified on 20 000 vectors: 40 → 200)
 - [x] Add re-index on file delete/move — watcher handles deletes, renames and folders moved in or out (editor-style delete-then-rename saves keep the row); startup scan drops entries for files deleted while the indexer was off, but only under watch paths that currently exist, so an unplugged drive doesn't wipe its entries
 - [x] Purge finished jobs — the AI worker deletes `Done` jobs older than `AIWorker:KeepDoneJobsDays` (7) every hour; `Failed` jobs are kept
 - [x] Add index health dashboard to UI — clicking the status line opens per-machine counts and last activity, the job queue by stage and status, and the 20 most recent failures with their errors
 - [x] Document setup steps for adding a new machine — `docs/adding-a-machine.md`, `docs/deployment.md`
+
+### Rollout — after features, testing and review are done
+- [ ] Deploy the homelab stack (`docs/deployment.md`)
+- [ ] Install the Indexer on the desktop and laptop (`docs/adding-a-machine.md`)
 
 ## 12. Open Questions / Decisions
 
