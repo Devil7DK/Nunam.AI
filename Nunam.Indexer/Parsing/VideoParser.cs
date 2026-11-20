@@ -1,3 +1,4 @@
+using System.Globalization;
 using FFMpegCore;
 using Microsoft.Extensions.Options;
 using Nunam.Core.Entities;
@@ -11,6 +12,13 @@ namespace Nunam.Indexer.Parsing
     public class VideoParser(IOptions<IndexerOptions> options, ILogger<VideoParser> logger) : IFileParser
     {
         private static readonly TimeSpan MaxFrameOffset = TimeSpan.FromSeconds(30);
+
+        /// <summary>
+        /// A file named .mp4 can hold an HLS playlist whose entries make ffmpeg open other local files or
+        /// URLs. Only plain files, read by the container demuxers real videos use, are allowed.
+        /// </summary>
+        private const string InputGuard =
+            "-protocol_whitelist file -format_whitelist mov,matroska,webm,avi,asf,flv,mpeg,mpegts,mpegvideo,ogg";
         private readonly IndexerOptions _options = options.Value;
 
         public bool CanParse(FileType fileType, string extension) => fileType == FileType.Video;
@@ -22,7 +30,7 @@ namespace Nunam.Indexer.Parsing
             IMediaAnalysis analysis;
             try
             {
-                analysis = await FFProbe.AnalyseAsync(file.FullName, ffOptions, cancellationToken: cancellationToken);
+                analysis = await FFProbe.AnalyseAsync(file.FullName, ffOptions, InputGuard, cancellationToken);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -64,8 +72,12 @@ namespace Nunam.Indexer.Parsing
 
             try
             {
-                await FFMpeg.Snapshot(file.FullName, framePath, captureTime: at, ffOptions: ffOptions)
-                    .ProcessAsynchronously(true, ffOptions, cancellationToken);
+                await FFMpegArguments
+                    .FromFileInput(file.FullName, verifyExists: true, input => input.WithCustomArgument(
+                        $"{InputGuard} -ss {at.TotalSeconds.ToString(CultureInfo.InvariantCulture)}"))
+                    .OutputToFile(framePath, overwrite: true, output => output.WithCustomArgument("-frames:v 1 -c:v png"))
+                    .CancellableThrough(cancellationToken)
+                    .ProcessAsynchronously(true, ffOptions);
 
                 var frame = await File.ReadAllBytesAsync(framePath, cancellationToken);
                 return PreviewImages.Create(frame, _options.PreviewMaxEdgePx, _options.MaxImagePixels)?.Bytes;
