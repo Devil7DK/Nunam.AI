@@ -1,5 +1,8 @@
-import type { IndexStatus, JobCount } from '@/api/nunam';
+import { useState } from 'react';
+import type { IndexStatus, JobCount, MachineSummary } from '@/api/nunam';
 import { CopyPathButton } from '@/components/CopyPathButton';
+import { MachineAccessDialog } from '@/components/MachineAccessDialog';
+import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { formatDateTime, formatRelative } from '@/lib/format';
 
@@ -16,6 +19,8 @@ export function IndexStatusDialog({ status, open, onOpenChange }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  const [sharing, setSharing] = useState<MachineSummary | null>(null);
+  const canShareAny = status.machines.some((m) => m.canShare);
   const count = (kind: JobCount['kind'], s: JobCount['status']) =>
     status.jobs.find((j) => j.kind === kind && j.status === s)?.count ?? 0;
 
@@ -41,7 +46,8 @@ export function IndexStatusDialog({ status, open, onOpenChange }: {
                     <th className="py-1.5 pr-4 font-medium">Host</th>
                     <th className="py-1.5 pr-4 text-right font-medium">Files</th>
                     <th className="py-1.5 pr-4 font-medium">Last indexed</th>
-                    <th className="py-1.5 font-medium">Indexer started</th>
+                    <th className="py-1.5 pr-4 font-medium">Indexer started</th>
+                    {canShareAny && <th className="py-1.5"><span className="sr-only">Sharing</span></th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -51,12 +57,20 @@ export function IndexStatusDialog({ status, open, onOpenChange }: {
                       <td className="py-1.5 pr-4 text-muted-foreground">{m.hostname}</td>
                       <td className="py-1.5 pr-4 text-right">{m.fileCount.toLocaleString()}</td>
                       <td className="py-1.5 pr-4" title={formatDateTime(m.lastIndexedAt)}>{formatRelative(m.lastIndexedAt)}</td>
-                      <td className="py-1.5" title={formatDateTime(m.lastSeen)}>{formatRelative(m.lastSeen)}</td>
+                      <td className="py-1.5 pr-4" title={formatDateTime(m.lastSeen)}>{formatRelative(m.lastSeen)}</td>
+                      {canShareAny && (
+                        <td className="py-1 text-right">
+                          {m.canShare && <Button variant="outline" size="xs" onClick={() => setSharing(m)}>Share</Button>}
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
+            {status.machines.length === 0 && (
+              <p className="text-muted-foreground">No machines are shared with you yet. Ask an admin or a machine's owner.</p>
+            )}
           </section>
 
           <section>
@@ -117,6 +131,7 @@ export function IndexStatusDialog({ status, open, onOpenChange }: {
           </section>
         </div>
       </DialogContent>
+      <MachineAccessDialog machine={sharing} onOpenChange={(o) => !o && setSharing(null)} />
     </Dialog>
   );
 }

@@ -65,6 +65,8 @@ export interface MachineSummary {
   lastSeen: string | null;
   fileCount: number;
   lastIndexedAt: string | null;
+  /** The user may change who can see this machine. */
+  canShare: boolean;
 }
 
 export interface JobCount {
@@ -86,28 +88,59 @@ export interface IndexStatus {
 
 export class ApiError extends Error {
   readonly status: number;
+  /** Per-field validation messages, keyed by the request's camelCase field names. */
+  readonly fieldErrors: Record<string, string[]>;
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, fieldErrors: Record<string, string[]> = {}) {
     super(message);
     this.status = status;
+    this.fieldErrors = fieldErrors;
   }
 }
 
-async function getJson<T>(url: string, signal?: AbortSignal): Promise<T> {
-  const response = await fetch(url, { signal, headers: { Accept: 'application/json' } });
+/** Fired when the API says the session is gone, so the app can return to sign-in. */
+export const UNAUTHORIZED_EVENT = 'nunam:unauthorized';
+
+async function request<T>(url: string, init: RequestInit = {}): Promise<T> {
+  const response = await fetch(url, {
+    ...init,
+    credentials: 'same-origin',
+    headers: {
+      Accept: 'application/json',
+      ...(init.body !== undefined && { 'Content-Type': 'application/json' }),
+      // The API refuses state-changing requests without it (CSRF protection).
+      ...(init.method && init.method !== 'GET' && { 'X-Nunam-Request': '1' }),
+      ...init.headers,
+    },
+  });
+
+  if (response.status === 401 && !url.startsWith('/api/auth/')) {
+    window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
+  }
+
   if (!response.ok) {
     let message = `${response.status} ${response.statusText}`;
+    let fieldErrors: Record<string, string[]> = {};
     try {
       const problem = await response.json();
-      const errors = problem.errors ? Object.values(problem.errors).flat().join(' ') : '';
+      fieldErrors = problem.errors ?? {};
+      const errors = Object.values(fieldErrors).flat().join(' ');
       message = errors || problem.detail || problem.title || message;
     } catch {
       // Not a problem-details body; the status line is all there is.
     }
-    throw new ApiError(response.status, message);
+    if (response.status === 429) message = 'Too many attempts. Wait a minute and try again.';
+    throw new ApiError(response.status, message, fieldErrors);
   }
+
+  if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
 }
+
+const getJson = <T,>(url: string, signal?: AbortSignal) => request<T>(url, { signal });
+
+const send = <T = void,>(method: 'POST' | 'PUT' | 'PATCH' | 'DELETE', url: string, body?: unknown) =>
+  request<T>(url, { method, body: body === undefined ? undefined : JSON.stringify(body) });
 
 export function search(params: SearchParams, signal?: AbortSignal): Promise<SearchResponse> {
   const query = new URLSearchParams();
@@ -126,3 +159,94 @@ export const previewUrl = (id: string, size?: number) =>
 
 export const MATCH_START = '';
 export const MATCH_END = '';
+
+export type UserRole = 'admin' | 'member';
+export type MachineRole = 'owner' | 'member';
+
+export interface UserInfo {
+  id: string;
+  userName: string;
+  displayName: string;
+  role: UserRole;
+  mustChangePassword: boolean;
+}
+
+export interface AuthState {
+  setupRequired: boolean;
+  user: UserInfo | null;
+}
+
+export interface SessionInfo {
+  id: string;
+  created: string;
+  lastSeen: string;
+  userAgent: string | null;
+  ipAddress: string | null;
+  current: boolean;
+}
+
+export interface UserSummary {
+  id: string;
+  userName: string;
+  displayName: string;
+  role: UserRole;
+  disabled: boolean;
+  mustChangePassword: boolean;
+  lastSignIn: string | null;
+  created: string;
+}
+
+export interface DirectoryEntry {
+  id: string;
+  userName: string;
+  displayName: string;
+}
+
+export interface MachineAccessEntry {
+  userId: string;
+  userName: string;
+  displayName: string;
+  role: MachineRole;
+}
+
+export const getAuthState = () => getJson<AuthState>('/api/auth/state');
+export const setup = (body: { code: string; userName: string; displayName: string; password: string }) =>
+  send<UserInfo>('POST', '/api/auth/setup', body);
+export const signIn = (body: { userName: string; password: string }) => send<UserInfo>('POST', '/api/auth/sign-in', body);
+export const signOut = (everywhere = false) =>
+  send('POST', everywhere ? '/api/auth/sign-out?everywhere=true' : '/api/auth/sign-out');
+export const changePassword = (body: { currentPassword: string; newPassword: string }) =>
+  send<UserInfo>('POST', '/api/auth/password', body);
+export const getSessions = () => getJson<SessionInfo[]>('/api/auth/sessions');
+export const endSession = (id: string) => send('DELETE', `/api/auth/sessions/${id}`);
+export const endOtherSessions = () => send('POST', '/api/auth/sessions/end-others');
+
+export const getUsers = () => getJson<UserSummary[]>('/api/users');
+export const getDirectory = () => getJson<DirectoryEntry[]>('/api/users/directory');
+export const createUser = (body: { userName: string; displayName: string; role: UserRole; temporaryPassword: string }) =>
+  send<UserSummary>('POST', '/api/users', body);
+export const updateUser = (id: string, body: { displayName?: string; role?: UserRole; disabled?: boolean }) =>
+  send<UserSummary>('PATCH', `/api/users/${id}`, body);
+export const resetPassword = (id: string, temporaryPassword: string) =>
+  send('POST', `/api/users/${id}/password`, { temporaryPassword });
+export const deleteUser = (id: string) => send('DELETE', `/api/users/${id}`);
+
+export const getMachineAccess = (machineId: string) => getJson<MachineAccessEntry[]>(`/api/machines/${machineId}/access`);
+export const setMachineAccess = (machineId: string, userId: string, role: MachineRole) =>
+  send('PUT', `/api/machines/${machineId}/access/${userId}`, { role });
+export const removeMachineAccess = (machineId: string, userId: string) =>
+  send('DELETE', `/api/machines/${machineId}/access/${userId}`);
+
+/** A random temporary password for an admin to hand over; the user must change it at first sign-in. */
+export function generateTemporaryPassword(): string {
+  const alphabet = 'abcdefghjkmnpqrstuvwxyz23456789';
+  // Bytes past the last whole multiple of the alphabet are dropped so every letter is equally likely.
+  const limit = 256 - (256 % alphabet.length);
+  const chars: string[] = [];
+  while (chars.length < 15) {
+    for (const b of crypto.getRandomValues(new Uint8Array(32))) {
+      if (b < limit && chars.length < 15) chars.push(alphabet[b % alphabet.length]);
+    }
+  }
+  return [0, 5, 10].map((i) => chars.slice(i, i + 5).join('')).join('-');
+}

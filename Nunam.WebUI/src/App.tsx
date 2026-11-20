@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { SlidersHorizontal } from 'lucide-react';
 import { getMachines, getStatus, type IndexStatus, type MachineSummary, type SearchResult } from '@/api/nunam';
+import { AccountMenu } from '@/components/AccountMenu';
 import { FilterPanel } from '@/components/FilterPanel';
 import { IndexStatusDialog } from '@/components/IndexStatusDialog';
 import { PreviewModal } from '@/components/PreviewModal';
@@ -67,6 +68,7 @@ export default function App() {
               <StatusLine status={status} onClick={() => setShowStatus(true)} />
             </div>
             <ThemeToggle theme={theme} onChange={setTheme} />
+            <AccountMenu />
           </div>
           <SearchBar
             query={filters.q}
@@ -95,6 +97,11 @@ export default function App() {
         </aside>
 
         <main className="min-w-0">
+          {status?.machines.length === 0 && (
+            <p className="mb-4 rounded-md border px-3 py-2 text-sm text-muted-foreground">
+              No machines are shared with you yet, so there is nothing to search. Ask an admin or a machine's owner to share one.
+            </p>
+          )}
           <SearchResults state={search} browsing={query === ''} onOpen={setOpen} />
         </main>
       </div>
