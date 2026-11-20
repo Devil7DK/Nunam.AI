@@ -92,17 +92,10 @@ namespace Nunam.API.Endpoints
 
             if (!passwords.Verify(user, password, out var needsRehash))
             {
-                if (user is not null)
+                if (user is not null && await CountFailureAsync(db, user.Id, now, options.Value, cancellationToken))
                 {
-                    user.FailedSignIns++;
-                    if (user.FailedSignIns >= options.Value.MaxFailedSignIns)
-                    {
-                        user.LockedUntil = now.AddMinutes(options.Value.LockoutMinutes);
-                        user.FailedSignIns = 0;
-                        logger.LogWarning("Locked {UserName} for {Minutes} minutes after repeated failed sign-ins from {Address}",
-                            user.UserName, options.Value.LockoutMinutes, http.Connection.RemoteIpAddress);
-                    }
-                    await db.SaveChangesAsync(cancellationToken);
+                    logger.LogWarning("Locked {UserName} for {Minutes} minutes after repeated failed sign-ins from {Address}",
+                        user.UserName, options.Value.LockoutMinutes, http.Connection.RemoteIpAddress);
                 }
                 return Failed();
             }
@@ -119,6 +112,26 @@ namespace Nunam.API.Endpoints
 
             static ProblemHttpResult Failed() =>
                 TypedResults.Problem(SignInFailed, statusCode: StatusCodes.Status401Unauthorized);
+        }
+
+        /// <summary>
+        /// Counts one failed sign-in and locks the account when it reaches the limit, in a single statement:
+        /// concurrent wrong guesses each read the count before any of them wrote it, so a read-modify-write
+        /// lets a burst of guesses through while counting only one. Returns whether this failure locked it.
+        /// </summary>
+        private static async Task<bool> CountFailureAsync(
+            NunamDbContext db, Guid userId, DateTimeOffset now, AuthOptions options, CancellationToken cancellationToken)
+        {
+            var max = options.MaxFailedSignIns;
+            var lockedUntil = now.AddMinutes(options.LockoutMinutes);
+            var locked = await db.Database.SqlQuery<bool>($"""
+                UPDATE users
+                SET failed_sign_ins = CASE WHEN failed_sign_ins + 1 >= {max} THEN 0 ELSE failed_sign_ins + 1 END,
+                    locked_until = CASE WHEN failed_sign_ins + 1 >= {max} THEN {lockedUntil} ELSE locked_until END
+                WHERE id = {userId}
+                RETURNING failed_sign_ins = 0 AS "Value"
+                """).ToListAsync(cancellationToken);
+            return locked is [true];
         }
 
         private static async Task<NoContent> SignOutAsync(
