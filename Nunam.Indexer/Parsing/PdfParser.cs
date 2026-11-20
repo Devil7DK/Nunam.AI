@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.RegularExpressions;
 using Microsoft.Extensions.Options;
 using Nunam.Core.Entities;
 using Syncfusion.Pdf;
@@ -11,7 +12,7 @@ namespace Nunam.Indexer.Parsing
     /// Extracts the text of every page. A PDF with almost no text is most likely a scan: its first page
     /// is rendered as the preview for the vision model, and its pages are OCRed for text.
     /// </summary>
-    public class PdfParser(IOptions<IndexerOptions> options, OcrService ocr, ILogger<PdfParser> logger) : IFileParser
+    public partial class PdfParser(IOptions<IndexerOptions> options, OcrService ocr, ILogger<PdfParser> logger) : IFileParser
     {
         private const int ScannedTextThreshold = 50;
         private readonly IndexerOptions _options = options.Value;
@@ -59,7 +60,8 @@ namespace Nunam.Indexer.Parsing
                 var preview = RenderFirstPage(file);
                 if (ocr.AddTextLayer(document, file.FullName))
                 {
-                    content = ExtractText(document, cancellationToken);
+                    // The OCR layer is one text object per word, which extracts as a line per word.
+                    content = Whitespace().Replace(ExtractText(document, cancellationToken), " ");
                 }
                 return Task.FromResult(new ParseOutcome
                 {
@@ -108,5 +110,8 @@ namespace Nunam.Indexer.Parsing
         private static bool IsPasswordProtected(Exception ex) =>
             ex.Message.Contains("password", StringComparison.OrdinalIgnoreCase)
             || ex.Message.Contains("encrypt", StringComparison.OrdinalIgnoreCase);
+
+        [GeneratedRegex(@"\s+")]
+        private static partial Regex Whitespace();
     }
 }
