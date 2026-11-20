@@ -57,26 +57,30 @@ namespace Nunam.API.Endpoints
             ThumbnailService thumbnails, CancellationToken cancellationToken)
         {
             var machineIds = await scope.VisibleMachineIdsAsync(user, cancellationToken);
-            var file = await db.Files
-                .Where(f => f.Id == id && (machineIds == null || machineIds.Contains(f.MachineId)))
-                .Select(f => new { f.Extension, f.PreviewImage, f.LastModified })
+            var visible = db.Files.Where(f => f.Id == id && (machineIds == null || machineIds.Contains(f.MachineId)));
+            var file = await visible
+                .Where(f => f.PreviewImage != null)
+                .Select(f => new { f.Extension, f.LastModified })
                 .FirstOrDefaultAsync(cancellationToken);
+            if (file is null) return TypedResults.NotFound();
 
-            if (file?.PreviewImage is null) return TypedResults.NotFound();
-
+            // no-cache, not max-age: the browser asks again every time, so access taken away ends at once
+            // instead of when the cached copy expires. The answer is usually a body-less 304.
+            http.Response.Headers.CacheControl = "private, no-cache";
             var version = file.LastModified.UtcTicks;
             var etag = new EntityTagHeaderValue($"\"{version:x}-{size ?? 0}\"");
             if (http.Request.GetTypedHeaders().IfNoneMatch.Any(t => t.Compare(etag, useStrongComparison: false)))
             {
+                http.Response.Headers.ETag = etag.ToString();
                 return TypedResults.StatusCode(StatusCodes.Status304NotModified);
             }
 
-            var image = size is { } edge
-                ? thumbnails.GetThumbnail(id, version, file.PreviewImage, edge)
-                : file.PreviewImage;
+            var preview = await visible.Select(f => f.PreviewImage).FirstOrDefaultAsync(cancellationToken);
+            if (preview is null) return TypedResults.NotFound();
+
+            var image = size is { } edge ? thumbnails.GetThumbnail(id, version, preview, edge) : preview;
             if (image is null) return TypedResults.NotFound();
 
-            http.Response.Headers.CacheControl = "private, max-age=3600";
             return TypedResults.File(image, MediaTypes.Detect(image, file.Extension), entityTag: etag);
         }
     }
