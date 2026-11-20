@@ -86,6 +86,8 @@ docker compose -f docker/docker-compose.yml up -d --build
 
 Migrations run on every `up`; already-applied ones are skipped.
 
+Base images are pinned by digest (`FROM nginx:1.29-alpine@sha256:…`), so a rebuild uses exactly the image that was reviewed and never picks up a tag that was changed upstream; it also never picks up security fixes on its own. Refresh them every month or so: `docker buildx imagetools inspect <image:tag>` prints the current digest for each `FROM` line and the `postgres` image in the Compose file.
+
 ## Backups
 
 All state is in the `nunam_pgdata` volume. Everything in it can be rebuilt by re-indexing, but descriptions and embeddings take GPU time to regenerate, so a nightly dump is worthwhile:
