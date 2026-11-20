@@ -739,7 +739,7 @@ Database logins are created by `docker/postgres/10-roles.sh` on first start of t
 |---|---|---|
 | 1 | Should the Indexer also run on homelab for NFS/SMB shares? | Yes — run a separate Indexer instance on homelab pointed at mounted shares |
 | 2 | How to handle files >500MB (large videos)? | Extract metadata only, skip content extraction |
-| 3 | Should embedding be regenerated on every file change? | Yes, if content hash changes |
+| 3 | Should embedding be regenerated on every file change? | Only when the AI input changed: a new preview image re-describes; a changed name, content or description re-embeds. The parse result is compared with the stored row, so there is no hash column |
 | 4 | Authentication for the web UI? | None initially (LAN-only), add basic auth in Phase 5 if needed |
 | 5 | Should thumbnails be stored in DB or generated on demand? | Generated on demand and cached in memory |
 | 6 | What to do with encrypted PDFs? | Skip content, set `metadata = {"encrypted": true}`; the file stays searchable by name. `Description` is left to the AI worker |

@@ -10,10 +10,10 @@ namespace Nunam.Indexer.Workers
 {
     /// <summary>
     /// Consumes this machine's <see cref="IndexJobKind.Parse"/> jobs: detects the file type, runs the
-    /// matching parser, upserts the <see cref="IndexedFile"/>, and enqueues the follow-up AI job —
-    /// a Describe when the parser produced a preview image (the DescribeWorker enqueues the Embed
-    /// after it), otherwise an Embed directly. Pending Embed/Describe jobs for the path are cleared
-    /// first so a re-parse doesn't pile up duplicates.
+    /// matching parser, upserts the <see cref="IndexedFile"/>, and enqueues the follow-up AI job when
+    /// its input changed — a Describe for a new preview image (the DescribeWorker enqueues the Embed
+    /// after it), otherwise an Embed. Pending Embed/Describe jobs for the path are cleared first so a
+    /// re-parse doesn't pile up duplicates.
     /// </summary>
     public class ParseWorker(
         IServiceScopeFactory scopeFactory,
@@ -99,6 +99,9 @@ namespace Nunam.Indexer.Workers
                 db.Files.Add(file);
             }
 
+            var content = CleanContent(outcome.Content);
+            var followUp = FollowUpFor(file, info.Name, content, outcome);
+
             file.FileName = info.Name;
             file.Extension = info.Extension;
             file.SizeBytes = info.Length;
@@ -106,7 +109,7 @@ namespace Nunam.Indexer.Workers
             file.FileCreatedAt = info.CreationTimeUtc;
             file.FileModifiedAt = info.LastWriteTimeUtc;
             file.IndexedAt = DateTimeOffset.UtcNow;
-            file.Content = CleanContent(outcome.Content);
+            file.Content = content;
             file.Metadata = outcome.Metadata;
             file.PreviewImage = outcome.PreviewImage;
             if (!outcome.NeedsDescribe)
@@ -114,14 +117,37 @@ namespace Nunam.Indexer.Workers
                 file.Description = null; // nothing will be described any more; drop a stale one
             }
 
-            await EnqueueFollowUpAsync(db, queue, job, outcome, cancellationToken);
+            if (followUp is { } kind)
+            {
+                await EnqueueFollowUpAsync(db, queue, job, kind, cancellationToken);
+            }
 
             job.Status = IndexJobStatus.Done;
             job.Error = null;
 
             _logger.LogInformation(
-                "Parsed {Path} (type={Type}, content={ContentLen} chars, preview={HasPreview}, describe={NeedsDescribe})",
-                job.Path, fileType, outcome.Content?.Length ?? 0, outcome.PreviewImage is not null, outcome.NeedsDescribe);
+                "Parsed {Path} (type={Type}, content={ContentLen} chars, preview={HasPreview}, follow-up={FollowUp})",
+                job.Path, fileType, outcome.Content?.Length ?? 0, outcome.PreviewImage is not null, followUp?.ToString() ?? "none");
+        }
+
+        /// <summary>
+        /// The AI job the new parse needs, judged against the row before it is overwritten. A file saved
+        /// again without changes (or only touched) keeps its description and embedding, which cost GPU
+        /// time to redo.
+        /// </summary>
+        private static IndexJobKind? FollowUpFor(IndexedFile file, string fileName, string? content, ParseOutcome outcome)
+        {
+            if (outcome.NeedsDescribe)
+            {
+                var samePreview = file.PreviewImage is not null && outcome.PreviewImage is not null
+                    && file.PreviewImage.AsSpan().SequenceEqual(outcome.PreviewImage);
+                if (file.Description is null || !samePreview) return IndexJobKind.Describe;
+            }
+
+            var embedInputChanged = file.FileName != fileName
+                || file.Content != content
+                || (!outcome.NeedsDescribe && file.Description is not null);
+            return file.Embedding is null || embedInputChanged ? IndexJobKind.Embed : null;
         }
 
         /// <summary>
@@ -131,7 +157,7 @@ namespace Nunam.Indexer.Workers
         /// job queued here runs after them and overwrites the result.
         /// </summary>
         private static async Task EnqueueFollowUpAsync(
-            NunamDbContext db, JobQueue queue, IndexJob job, ParseOutcome outcome, CancellationToken cancellationToken)
+            NunamDbContext db, JobQueue queue, IndexJob job, IndexJobKind kind, CancellationToken cancellationToken)
         {
             await db.IndexJobs
                 .Where(j => j.MachineId == job.MachineId
@@ -140,7 +166,7 @@ namespace Nunam.Indexer.Workers
                     && j.Status == IndexJobStatus.Pending)
                 .ExecuteDeleteAsync(cancellationToken);
 
-            queue.Enqueue(job.MachineId, job.Path, outcome.NeedsDescribe ? IndexJobKind.Describe : IndexJobKind.Embed);
+            queue.Enqueue(job.MachineId, job.Path, kind);
         }
 
         /// <summary>Postgres text rejects NUL, and the full-text trigger rejects oversized content.</summary>
