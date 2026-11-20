@@ -29,6 +29,7 @@ namespace Nunam.Core.Data
             model.Entity<Machine>(e =>
             {
                 e.HasIndex(m => m.Hostname).IsUnique();
+                e.Property(m => m.DbRole).HasDefaultValueSql("current_user").ValueGeneratedOnAdd();
             });
 
             model.Entity<IndexedFile>(e =>

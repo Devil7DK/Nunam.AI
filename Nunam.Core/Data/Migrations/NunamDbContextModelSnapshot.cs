@@ -201,6 +201,12 @@ namespace Nunam.Core.Data.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created");
 
+                    b.Property<string>("DbRole")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text")
+                        .HasColumnName("db_role")
+                        .HasDefaultValueSql("current_user");
+
                     b.Property<string>("Hostname")
                         .IsRequired()
                         .HasColumnType("text")
