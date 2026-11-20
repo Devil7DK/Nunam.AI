@@ -1,4 +1,21 @@
 # Serves the built UI and forwards /api to the API container, so the browser talks to one origin.
+# A template: the nginx image substitutes ${NUNAM_TRUSTED_PROXY} at start.
+
+# An HTTPS proxy in front (NUNAM_TRUSTED_PROXY) passes the client's address and scheme on; anyone
+# else sending those headers is ignored, or they could dodge the sign-in limit per address.
+set_real_ip_from ${NUNAM_TRUSTED_PROXY};
+real_ip_header X-Forwarded-For;
+
+geo $realip_remote_addr $from_trusted_proxy {
+    default 0;
+    ${NUNAM_TRUSTED_PROXY} 1;
+}
+
+map "$from_trusted_proxy:$http_x_forwarded_proto" $client_scheme {
+    default $scheme;
+    "1:https" https;
+}
+
 server {
     listen 80;
     root /usr/share/nginx/html;
@@ -10,7 +27,7 @@ server {
         proxy_set_header Host $host;
         # Replaces whatever the client sent: the API trusts these to rate-limit sign-ins per address.
         proxy_set_header X-Forwarded-For $remote_addr;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Proto $client_scheme;
         proxy_read_timeout 60s;
     }
 

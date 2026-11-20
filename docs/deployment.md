@@ -61,7 +61,7 @@ With no other account, delete the accounts and restart the API to get a new setu
 DELETE FROM users;
 ```
 
-Nunam is built for the LAN. The session cookie is marked `Secure` only when the page was loaded over HTTPS, so plain-HTTP access works; anyone who can watch LAN traffic could read a session cookie there. Put an HTTPS reverse proxy in front before exposing it beyond the LAN.
+Nunam is built for the LAN. The session cookie is marked `Secure` only when the page was loaded over HTTPS, so plain-HTTP access works; anyone who can watch LAN traffic could read a session cookie there. Put an HTTPS reverse proxy in front before exposing it beyond the LAN, and set `NUNAM_TRUSTED_PROXY` in `.env` to that proxy's address (as nginx in `nunam-ui` sees it, e.g. `172.18.0.1/32`). Only then does nginx pass on the client address and `https` scheme the proxy reports; without it, every request looks like it came from the proxy, so all users share one sign-in limit, and the cookie isn't marked `Secure`.
 
 **Database logins.** `docker/postgres/10-roles.sh` creates the AI worker and API logins the first time the `pgdata` volume is initialised; changing a password in `.env` later does not change it in the database (`ALTER ROLE nunam_api PASSWORD '…'`). Keep passwords free of `;` — Npgsql connection strings split on it.
 

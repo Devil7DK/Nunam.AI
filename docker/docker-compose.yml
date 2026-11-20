@@ -60,6 +60,8 @@ services:
     restart: unless-stopped
     ports:
       - "${UI_PORT:-3000}:80"
+    environment:
+      NUNAM_TRUSTED_PROXY: ${NUNAM_TRUSTED_PROXY:-127.0.0.1/32}
     depends_on:
       - nunam-api
 
