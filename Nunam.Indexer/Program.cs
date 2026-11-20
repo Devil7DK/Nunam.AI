@@ -42,6 +42,7 @@ builder.Services.AddScoped<JobQueue>();
 builder.Services.AddSingleton<MachineContext>();
 builder.Services.AddSingleton<PathFilter>();
 builder.Services.AddSingleton<FileTree>();
+builder.Services.AddSingleton<IndexScope>();
 
 // Parsing pipeline. Registration order matters: specialized parsers first, fallback last.
 builder.Services.AddSingleton<FileTypeDetector>();

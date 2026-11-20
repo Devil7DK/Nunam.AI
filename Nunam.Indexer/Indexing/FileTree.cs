@@ -1,6 +1,9 @@
 namespace Nunam.Indexer.Indexing
 {
-    /// <summary>Walks a directory tree, skipping excluded paths and directories it can't read.</summary>
+    /// <summary>
+    /// Walks a directory tree, skipping excluded paths, directories it can't read, and symlinks or
+    /// junctions, which could lead outside the watch root to files the service account can read.
+    /// </summary>
     public class FileTree(PathFilter pathFilter, ILogger<FileTree> logger)
     {
         /// <summary>Depth-first, lazily, so a huge tree is never held in memory.</summary>
@@ -14,11 +17,14 @@ namespace Nunam.Indexer.Indexing
                 var dir = stack.Pop();
                 if (pathFilter.IsExcluded(dir + Path.DirectorySeparatorChar)) continue;
 
-                foreach (var sub in Read(() => Directory.GetDirectories(dir), dir)) stack.Push(sub);
+                foreach (var sub in Read(() => Directory.GetDirectories(dir), dir))
+                {
+                    if (!IndexScope.IsLink(new DirectoryInfo(sub))) stack.Push(sub);
+                }
 
                 foreach (var file in Read(() => Directory.GetFiles(dir), dir))
                 {
-                    if (!pathFilter.IsExcluded(file)) yield return file;
+                    if (!pathFilter.IsExcluded(file) && !IndexScope.IsLink(new FileInfo(file))) yield return file;
                 }
             }
         }

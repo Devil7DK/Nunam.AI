@@ -765,6 +765,15 @@ Decided: per-user accounts, per-machine access, LAN only for now (§12 #4, #10).
 - [x] UI — setup, sign-in and forced password change screens; account menu (change password, sessions, sign out); admin user management; machine sharing in the index status dialog; 401 returns to sign-in
 - [x] Docs — first-run setup, adding people, sharing machines, recovering a lost admin password from the database
 
+### Phase 7 — Security audit fixes
+From the first full security audit (2026-11-20; report kept outside the repo). Severity in brackets.
+- [x] Indexer reads only files under its watch paths [high ×2] — `IndexScope` requires a path to resolve under a configured root, pass the exclude patterns, and reach the file without crossing a symlink or junction. ParseWorker checks every job before opening it (queue rows come from a database every indexer can write), and the tree walk and watcher skip links
+- [ ] Per-machine database logins with row-level security [medium] — one login per indexer, rows bound to its machine; no worker login can write migration history
+- [ ] Bounded parser work [medium] — pixel budget before decoding images, PDF previews scaled like other previews, Excel extraction capped to populated cells, per-job deadline and attempt limit for Parse jobs
+- [ ] AI queue keeps moving [medium] — a server error or timeout counts against the job (attempt limit) instead of pausing the whole queue; a rejected embed batch is retried item by item
+- [ ] API work limits [low/medium] — search text length and term caps plus a statement timeout; thumbnails check dimensions before decoding and use fixed sizes
+- [ ] Sign-in lockout counter updated atomically [unverified by the audit]
+
 ### Rollout — after features, testing and review are done
 - [ ] Deploy the homelab stack (`docs/deployment.md`)
 - [ ] Install the Indexer on the desktop and laptop (`docs/adding-a-machine.md`)

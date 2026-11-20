@@ -18,6 +18,7 @@ namespace Nunam.Indexer.Workers
     public class ParseWorker(
         IServiceScopeFactory scopeFactory,
         MachineContext machine,
+        IndexScope scope,
         IOptions<IndexerOptions> options,
         ILogger<ParseWorker> logger) : PollingWorker(logger)
     {
@@ -75,6 +76,12 @@ namespace Nunam.Indexer.Workers
             IndexJob job, CancellationToken cancellationToken)
         {
             job.Stage = IndexJobStage.Detect;
+
+            if (!scope.Allows(job.Path, out var reason))
+            {
+                Fail(job, reason);
+                return;
+            }
 
             var info = new FileInfo(job.Path);
             if (!info.Exists)

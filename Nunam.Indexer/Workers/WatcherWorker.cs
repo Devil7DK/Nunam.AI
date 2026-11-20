@@ -17,6 +17,7 @@ namespace Nunam.Indexer.Workers
         MachineContext machine,
         PathFilter pathFilter,
         FileTree fileTree,
+        IndexScope scope,
         IOptions<IndexerOptions> options,
         ILogger<WatcherWorker> logger) : BackgroundService
     {
@@ -117,6 +118,13 @@ namespace Nunam.Indexer.Workers
 
         private async Task HandleAsync(NunamDbContext db, JobQueue queue, string path, CancellationToken cancellationToken)
         {
+            var exists = File.Exists(path) || Directory.Exists(path);
+            if (exists && !scope.Allows(path, out var reason))
+            {
+                logger.LogDebug("Ignoring change to {Path}: {Reason}", path, reason);
+                return;
+            }
+
             if (File.Exists(path))
             {
                 if (await queue.EnqueueParseIfAbsentAsync(machine.MachineId, path, cancellationToken))
