@@ -18,7 +18,7 @@ Everything machine-specific goes in `appsettings.Local.json` next to the executa
 
 | Setting | |
 |---|---|
-| `ConnectionStrings:Postgres` | Homelab database as `nunam_indexer`. |
+| `ConnectionStrings:Postgres` | The machine's own database login: run `docker/add-indexer-login.sh <machine-name>` on the homelab and paste the connection string it prints. Don't share one login between machines. |
 | `Syncfusion:LicenseKey` | Without it documents are parsed in evaluation mode. |
 | `Indexer:WatchPaths` | Folders to index, recursively. |
 | `Indexer:MachineName` | Name shown in the UI; defaults to the hostname. The machine is identified by hostname, so renaming here keeps its files. |

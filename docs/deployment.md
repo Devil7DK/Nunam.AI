@@ -63,7 +63,17 @@ DELETE FROM users;
 
 Nunam is built for the LAN. The session cookie is marked `Secure` only when the page was loaded over HTTPS, so plain-HTTP access works; anyone who can watch LAN traffic could read a session cookie there. Put an HTTPS reverse proxy in front before exposing it beyond the LAN.
 
-**Database logins** are created by `docker/postgres/10-roles.sh` the first time the `pgdata` volume is initialised. Changing a password in `.env` later does not change it in the database; use `ALTER ROLE nunam_indexer PASSWORD '…'` instead. Keep passwords free of `;` — Npgsql connection strings split on it.
+**Database logins.** `docker/postgres/10-roles.sh` creates the AI worker and API logins the first time the `pgdata` volume is initialised; changing a password in `.env` later does not change it in the database (`ALTER ROLE nunam_api PASSWORD '…'`). Keep passwords free of `;` — Npgsql connection strings split on it.
+
+**Each indexed machine gets its own login**, created on the homelab with:
+
+```bash
+docker/add-indexer-login.sh laptop          # prints the connection string for that machine
+```
+
+Row-level security limits that login to the machine it registers: it cannot read, change or queue work for any other machine's files, so a leaked indexer password exposes only that machine's own index. The AI worker can update descriptions and embeddings but cannot add files; the API only reads. To retire a machine's login: `DROP ROLE nunam_idx_laptop;` after deleting the machine.
+
+A login registers the machine on its first run. If the hostname is already registered under a different login (for example after recreating the login), the indexer stops with an error; delete the old machine row or reuse its login.
 
 ## 4. Updating
 
