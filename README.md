@@ -25,6 +25,6 @@ Website and docs: <https://nunam.dineshkumar.dev>
 
 Build with the .NET 10 SDK: `dotnet build Nunam.slnx`.
 
-## Third-party licenses
+## License
 
-The indexer reads Office and PDF files with Syncfusion libraries under the Syncfusion Community License. Anyone building or redistributing the indexer needs their own Syncfusion license key.
+[GNU Affero General Public License v3.0 or later](LICENSE). Running a modified Nunam as a service for others means offering them its source.
