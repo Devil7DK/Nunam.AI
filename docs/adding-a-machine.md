@@ -14,7 +14,7 @@ Tesseract (OCR), PDFium and SkiaSharp come with the NuGet packages.
 
 ## Settings
 
-Everything machine-specific goes in `appsettings.Local.json` next to the executable — start from `deploy/indexer/appsettings.Local.example.json`:
+Everything machine-specific goes in `appsettings.Local.json` next to the executable (on Linux, `/etc/nunam-indexer/appsettings.Local.json`) — start from `deploy/indexer/appsettings.Local.example.json`:
 
 | Setting | |
 |---|---|
@@ -47,7 +47,24 @@ Warnings and errors go to Event Viewer → Windows Logs → Application.
 
 ## Linux
 
-See the commands at the top of `deploy/indexer/nunam-indexer.service`: publish to `/opt/nunam/indexer`, add `appsettings.Local.json` (mode 600), install and enable the unit. Logs: `journalctl -u nunam-indexer`.
+Build the packages on a Linux machine with the .NET SDK and Docker:
+
+```bash
+deploy/indexer/linux/build-packages.sh   # artifacts/packages/nunam-indexer_<version>_amd64.deb and nunam-indexer-<version>-1.x86_64.rpm
+```
+
+Install the one that fits: `sudo apt install ./nunam-indexer_0.1.0_amd64.deb` (Debian 12 or later, Ubuntu) or `sudo dnf install ./nunam-indexer-0.1.0-1.x86_64.rpm` (Fedora). The .NET runtime is included; ffmpeg (video) and leptonica (OCR) come as recommended packages. Then:
+
+1. Fill in `/etc/nunam-indexer/appsettings.Local.json`, save the database certificate as `/etc/nunam-indexer/nunam-db.crt`, and use that path in the connection string. The file is readable only by root and the service.
+2. The service runs as the `nunam` system user, which can't read anyone's home folder. Let it read each watch path:
+   ```bash
+   sudo setfacl -m u:nunam:x ~                                  # pass through the home folder, not list it
+   sudo setfacl -R -m u:nunam:rX -m d:u:nunam:rX ~/Documents     # read everything in it, now and later
+   ```
+   With `/` as the watch path, do this for each home folder that should be indexed; a home folder the service can't enter is skipped.
+3. `sudo systemctl enable --now nunam-indexer`. Logs: `journalctl -u nunam-indexer`.
+
+Installing a newer package keeps the settings and restarts the service. The service is sandboxed: it sees the filesystem read-only and writes only to its own `/tmp`.
 
 ## What happens next
 
@@ -57,7 +74,7 @@ Only admins see the new machine at first. To let others search it, open *Index s
 
 ## Removing a machine
 
-Stop and remove the service (`sc.exe delete Nunam.Indexer`) and, on Windows, the read grants (`icacls <watch path> /remove "NT SERVICE\Nunam.Indexer"` for each). Then delete its rows; files and jobs go with the machine:
+Remove the package (`sudo apt remove nunam-indexer`, `sudo dnf remove nunam-indexer`) or, on Windows, stop and remove the service (`sc.exe delete Nunam.Indexer`) and the read grants (`icacls <watch path> /remove "NT SERVICE\Nunam.Indexer"` for each). Then delete its rows; files and jobs go with the machine:
 
 ```sql
 DELETE FROM machines WHERE name = 'laptop';

@@ -1,8 +1,5 @@
-# systemd unit for a Linux indexer (e.g. the homelab indexing mounted shares).
-#   dotnet publish Nunam.Indexer -c Release -r linux-x64 --self-contained false -o /opt/nunam/indexer
-#   cp deploy/indexer/appsettings.Local.example.json /opt/nunam/indexer/appsettings.Local.json   # edit it
-#   chmod 600 /opt/nunam/indexer/appsettings.Local.json && chown nunam: /opt/nunam/indexer/appsettings.Local.json
-#   cp deploy/indexer/nunam-indexer.service /etc/systemd/system/ && systemctl enable --now nunam-indexer
+# systemd unit for the Linux indexer, installed by the .deb and .rpm packages (build-packages.sh).
+# Settings: /etc/nunam-indexer/appsettings.Local.json, linked from the install folder.
 [Unit]
 Description=Nunam Indexer
 After=network-online.target remote-fs.target
@@ -11,8 +8,8 @@ Wants=network-online.target
 [Service]
 Type=notify
 User=nunam
-WorkingDirectory=/opt/nunam/indexer
-ExecStart=/opt/nunam/indexer/Nunam.Indexer
+WorkingDirectory=/usr/lib/nunam-indexer
+ExecStart=/usr/lib/nunam-indexer/Nunam.Indexer
 Restart=on-failure
 RestartSec=30
 Environment=DOTNET_ENVIRONMENT=Production
@@ -30,7 +27,6 @@ ProtectKernelLogs=yes
 ProtectControlGroups=yes
 ProtectClock=yes
 ProtectHostname=yes
-ProtectProc=invisible
 RestrictNamespaces=yes
 RestrictRealtime=yes
 RestrictSUIDSGID=yes
@@ -42,6 +38,7 @@ SystemCallErrorNumber=EPERM
 CapabilityBoundingSet=
 UMask=0077
 # Not MemoryDenyWriteExecute: the .NET JIT needs writable+executable memory.
+# Not ProtectProc=invisible: it hides PID 1, so .NET doesn't detect systemd and never reports ready.
 
 [Install]
 WantedBy=multi-user.target
