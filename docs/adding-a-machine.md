@@ -38,17 +38,19 @@ Build the installer on a Linux machine with the .NET SDK and msitools (`dnf inst
 deploy/indexer/windows/build-msi.sh   # artifacts/packages/nunam-indexer-<version>-x64.msi
 ```
 
-Run the MSI on the Windows machine. It installs the indexer to `C:\Program Files\Nunam\Indexer` with its own .NET runtime, and registers the `Nunam.Indexer` service. The service stays stopped until the settings are filled in. Then open Start → **Configure Nunam Indexer**. It asks for administrator rights, opens `appsettings.Local.json` in Notepad and waits for you to save and close it. It then sets the service to delayed automatic start that restarts on failure, grants read access to the watch paths and starts it. Run it again after changing the watch paths. Installing a newer MSI keeps the settings and starts the service again on its own. OCR needs Tesseract (the configure script warns when it can't find it); video needs ffmpeg on `PATH` or `Indexer:FFmpegBinaryFolder`.
+Run the MSI on the Windows machine. It installs the indexer to `C:\Program Files\Nunam\Indexer` with its own .NET runtime, and registers the `Nunam.Indexer` service. The service stays stopped until the settings are filled in. Then open Start → **Configure Nunam Indexer**. It asks for administrator rights and which account to run as (below), opens `appsettings.Local.json` in Notepad and waits for you to save and close it. It then sets the service to delayed automatic start that restarts on failure, grants read access to the watch paths if needed and starts it. Run it again after changing the watch paths. Installing a newer MSI keeps the settings and starts the service again on its own. OCR needs Tesseract (the configure script warns when it can't find it); video needs ffmpeg on `PATH` or `Indexer:FFmpegBinaryFolder`.
 
-The service runs as its own virtual account, `NT SERVICE\Nunam.Indexer`, which can read only what it is given. A subfolder that blocks inherited permissions stays unreadable, and its files are logged as failed. With a whole drive or `C:\Users` as the watch path, each profile's own folders (Documents, Desktop, Pictures, …) are granted instead of the drive. `AppData` and hidden folders are left out, and the rest of the drive is readable to the Users group anyway.
+The script asks which account the service runs as:
 
-The account can't reach network shares. To index a share, run the script from an elevated PowerShell with `-Account DOMAIN\user` for an account that can; it asks for the password:
+- **Its own account**, `NT SERVICE\Nunam.Indexer` (the default). It reads only what the script grants it. A subfolder that blocks inherited permissions stays unreadable, and its files are logged as failed. With a whole drive or `C:\Users` as the watch path, each profile's own folders (Documents, Desktop, Pictures, …) are granted instead of the drive. `AppData` and hidden folders are left out, and the rest of the drive is readable to the Users group anyway. It can't reach network shares.
+- **Your account**. The indexer reads everything you can, network shares included, and nothing is granted. The script asks for your Windows password, checks it, and gives the account the *Log on as a service* right. When you change your password, run the script again and choose your account, or the service fails to start. A Windows Hello PIN won't do; it needs the account's password.
+- **Another account**, `DOMAIN\user` or `.\user`, the same way. `LocalSystem` reads everything without a password, but then a flaw in a file parser would control the whole machine.
+
+Upgrades keep the account. From a script, pass it instead of answering:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File "C:\Program Files\Nunam\Indexer\Configure-Indexer.ps1" -Account DOMAIN\user
+powershell -ExecutionPolicy Bypass -File "C:\Program Files\Nunam\Indexer\Configure-Indexer.ps1" -Account DOMAIN\user -Credential (Get-Credential DOMAIN\user)
 ```
-
-An upgrade puts the service back on the virtual account, so run that again after one. `-Account LocalSystem` reads everything without grants, but then a flaw in a file parser would control the whole machine.
 
 Warnings and errors go to Event Viewer → Windows Logs → Application.
 
@@ -96,7 +98,7 @@ All of this goes through the database: the indexer opens no port.
 
 ## Removing a machine
 
-Uninstall it (Windows: *Settings → Apps → Nunam Indexer*; Linux: `sudo apt remove nunam-indexer` or `sudo dnf remove nunam-indexer`). On Windows `appsettings.Local.json` stays in the install folder; also remove the read grants (`icacls <watch path> /remove "NT SERVICE\Nunam.Indexer"` for each). Then delete its rows; files and jobs go with the machine:
+Uninstall it (Windows: *Settings → Apps → Nunam Indexer*; Linux: `sudo apt remove nunam-indexer` or `sudo dnf remove nunam-indexer`). On Windows `appsettings.Local.json` stays in the install folder; if the service ran as its own account, also remove the read grants (`icacls <watch path> /remove "NT SERVICE\Nunam.Indexer"` for each). Then delete its rows; files and jobs go with the machine:
 
 ```sql
 DELETE FROM machines WHERE name = 'laptop';
