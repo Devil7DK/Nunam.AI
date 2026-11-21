@@ -194,6 +194,200 @@ namespace Nunam.Core.Data.Migrations
                     b.ToTable("files", (string)null);
                 });
 
+            modelBuilder.Entity("Nunam.Core.Entities.IndexerCommand", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("completed_at");
+
+                    b.Property<DateTimeOffset>("Created")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("kind");
+
+                    b.Property<DateTimeOffset>("LastModified")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_modified");
+
+                    b.Property<Guid>("MachineId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("machine_id");
+
+                    b.Property<string>("RequestedBy")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("requested_by");
+
+                    b.Property<string>("Result")
+                        .HasColumnType("text")
+                        .HasColumnName("result");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("status");
+
+                    b.HasKey("Id")
+                        .HasName("pk_indexer_commands");
+
+                    b.HasIndex("MachineId", "Status")
+                        .HasDatabaseName("ix_indexer_commands_machine_id_status");
+
+                    b.ToTable("indexer_commands", (string)null);
+                });
+
+            modelBuilder.Entity("Nunam.Core.Entities.IndexerLogEntry", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("At")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("at");
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("category");
+
+                    b.Property<string>("Exception")
+                        .HasColumnType("text")
+                        .HasColumnName("exception");
+
+                    b.Property<string>("Level")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("level");
+
+                    b.Property<Guid>("MachineId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("machine_id");
+
+                    b.Property<string>("Message")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("message");
+
+                    b.HasKey("Id")
+                        .HasName("pk_indexer_logs");
+
+                    b.HasIndex("MachineId", "At")
+                        .HasDatabaseName("ix_indexer_logs_machine_id_at");
+
+                    b.ToTable("indexer_logs", (string)null);
+                });
+
+            modelBuilder.Entity("Nunam.Core.Entities.IndexerSettings", b =>
+                {
+                    b.Property<Guid>("MachineId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("machine_id");
+
+                    b.Property<int>("Revision")
+                        .HasColumnType("integer")
+                        .HasColumnName("revision");
+
+                    b.Property<string>("Settings")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("settings");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<string>("UpdatedBy")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("updated_by");
+
+                    b.HasKey("MachineId")
+                        .HasName("pk_indexer_settings");
+
+                    b.ToTable("indexer_settings", (string)null);
+                });
+
+            modelBuilder.Entity("Nunam.Core.Entities.IndexerStatus", b =>
+                {
+                    b.Property<Guid>("MachineId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("machine_id");
+
+                    b.Property<int?>("AppliedRevision")
+                        .HasColumnType("integer")
+                        .HasColumnName("applied_revision");
+
+                    b.Property<string>("Config")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("config");
+
+                    b.Property<string>("OperatingSystem")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("operating_system");
+
+                    b.Property<DateTimeOffset>("ProcessStartedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("process_started_at");
+
+                    b.Property<bool>("RemoteManagement")
+                        .HasColumnType("boolean")
+                        .HasColumnName("remote_management");
+
+                    b.Property<DateTimeOffset>("ReportedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("reported_at");
+
+                    b.Property<DateTimeOffset?>("ScanFinishedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("scan_finished_at");
+
+                    b.Property<DateTimeOffset?>("ScanStartedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("scan_started_at");
+
+                    b.Property<string>("ServiceAccount")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("service_account");
+
+                    b.Property<DateTimeOffset>("StartedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("started_at");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("state");
+
+                    b.Property<string>("Version")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("version");
+
+                    b.Property<string>("WatchPaths")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("watch_paths");
+
+                    b.HasKey("MachineId")
+                        .HasName("pk_indexer_status");
+
+                    b.ToTable("indexer_status", (string)null);
+                });
+
             modelBuilder.Entity("Nunam.Core.Entities.Machine", b =>
                 {
                     b.Property<Guid>("Id")
@@ -418,6 +612,54 @@ namespace Nunam.Core.Data.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_files_machines_machine_id");
+
+                    b.Navigation("Machine");
+                });
+
+            modelBuilder.Entity("Nunam.Core.Entities.IndexerCommand", b =>
+                {
+                    b.HasOne("Nunam.Core.Entities.Machine", "Machine")
+                        .WithMany()
+                        .HasForeignKey("MachineId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_indexer_commands_machines_machine_id");
+
+                    b.Navigation("Machine");
+                });
+
+            modelBuilder.Entity("Nunam.Core.Entities.IndexerLogEntry", b =>
+                {
+                    b.HasOne("Nunam.Core.Entities.Machine", "Machine")
+                        .WithMany()
+                        .HasForeignKey("MachineId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_indexer_logs_machines_machine_id");
+
+                    b.Navigation("Machine");
+                });
+
+            modelBuilder.Entity("Nunam.Core.Entities.IndexerSettings", b =>
+                {
+                    b.HasOne("Nunam.Core.Entities.Machine", "Machine")
+                        .WithOne()
+                        .HasForeignKey("Nunam.Core.Entities.IndexerSettings", "MachineId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_indexer_settings_machines_machine_id");
+
+                    b.Navigation("Machine");
+                });
+
+            modelBuilder.Entity("Nunam.Core.Entities.IndexerStatus", b =>
+                {
+                    b.HasOne("Nunam.Core.Entities.Machine", "Machine")
+                        .WithOne()
+                        .HasForeignKey("Nunam.Core.Entities.IndexerStatus", "MachineId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_indexer_status_machines_machine_id");
 
                     b.Navigation("Machine");
                 });

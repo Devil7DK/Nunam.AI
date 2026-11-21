@@ -11,6 +11,10 @@ namespace Nunam.Core.Data
         public DbSet<User> Users => Set<User>();
         public DbSet<UserSession> UserSessions => Set<UserSession>();
         public DbSet<MachineAccess> MachineAccess => Set<MachineAccess>();
+        public DbSet<IndexerStatus> IndexerStatus => Set<IndexerStatus>();
+        public DbSet<IndexerSettings> IndexerSettings => Set<IndexerSettings>();
+        public DbSet<IndexerCommand> IndexerCommands => Set<IndexerCommand>();
+        public DbSet<IndexerLogEntry> IndexerLogs => Set<IndexerLogEntry>();
 
         protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
         {
@@ -101,6 +105,39 @@ namespace Nunam.Core.Data
                     .WithMany(u => u.MachineAccess)
                     .HasForeignKey(a => a.UserId)
                     .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            model.Entity<IndexerStatus>(e =>
+            {
+                e.ToTable("indexer_status");
+                e.HasKey(s => s.MachineId);
+                e.Property(s => s.State).HasConversion<string>();
+                e.Property(s => s.Config).HasColumnType("jsonb");
+                e.Property(s => s.WatchPaths).HasColumnType("jsonb");
+                e.HasOne(s => s.Machine).WithOne().HasForeignKey<IndexerStatus>(s => s.MachineId).OnDelete(DeleteBehavior.Cascade);
+            });
+
+            model.Entity<IndexerSettings>(e =>
+            {
+                e.HasKey(s => s.MachineId);
+                e.Property(s => s.Settings).HasColumnType("jsonb");
+                e.HasOne(s => s.Machine).WithOne().HasForeignKey<IndexerSettings>(s => s.MachineId).OnDelete(DeleteBehavior.Cascade);
+            });
+
+            model.Entity<IndexerCommand>(e =>
+            {
+                e.HasIndex(c => new { c.MachineId, c.Status });
+                e.Property(c => c.Kind).HasConversion<string>();
+                e.Property(c => c.Status).HasConversion<string>();
+                e.HasOne(c => c.Machine).WithMany().HasForeignKey(c => c.MachineId).OnDelete(DeleteBehavior.Cascade);
+            });
+
+            model.Entity<IndexerLogEntry>(e =>
+            {
+                e.ToTable("indexer_logs");
+                e.HasIndex(l => new { l.MachineId, l.At });
+                e.Property(l => l.Level).HasConversion<string>();
+                e.HasOne(l => l.Machine).WithMany().HasForeignKey(l => l.MachineId).OnDelete(DeleteBehavior.Cascade);
             });
         }
     }
