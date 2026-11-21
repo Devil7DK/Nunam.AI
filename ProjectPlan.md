@@ -792,7 +792,7 @@ From the first full security audit (2026-11-20; report kept outside the repo). S
 - Indexer version 0.2.0: older indexers don't report and show as *never reported*
 
 ### Rollout — after features, testing and review are done
-- [ ] Deploy the homelab stack (`docs/deployment.md`)
+- [x] Deploy the server — its own LXC (`nunam`, 192.168.7.118, Debian 13, 4 vCPU, 8 GB, 32 GB) rather than the shared docker-host, so the index and its LAN-facing Postgres sit apart from the other apps. Laid out like the other app LXCs: `deploy/server/` (`compose.yaml` on registry images, `.env.example`, runbook) copied to `/srv/docker` with `.env` at 0600 and the folder in a local git repo. Images `registry.dineshkumar.dev/nunam/nunam-{migrations,api,ui,aiworker}` tagged `latest` and `<date>-<commit>`; the registry has no `nunam` project yet, so the first build was loaded onto the LXC over SSH. Checked: migrations applied, UI and API answer from the LAN, setup code issued, Postgres refuses non-TLS logins
 - [ ] Install the Indexer on the desktop and laptop (`docs/adding-a-machine.md`)
 
 ## 12. Open Questions / Decisions

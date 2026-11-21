@@ -1,0 +1,91 @@
+# Nunam's server, run from registry images. Indexers run natively on each machine and Ollama runs on
+# the GPU machine, so neither is here. The runbook is README.md beside this file.
+#
+# Two ports are published: the web UI, and Postgres, which indexers on other machines write to
+# directly (TLS only, one login per machine, row-level security). The API is reachable only through
+# the UI's nginx.
+
+name: nunam
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg18@sha256:38681dc6eaf55308e2a4c6de392d131652dcfac70e1263e35cd9b5ea3fe39782
+    container_name: nunam_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      # Read once, by postgres/10-roles.sh, when the volume is first initialised.
+      NUNAM_AIWORKER_PASSWORD: ${NUNAM_AIWORKER_PASSWORD}
+      NUNAM_API_PASSWORD: ${NUNAM_API_PASSWORD}
+      TZ: ${TZ}
+    volumes:
+      # Postgres 18 images keep data in a versioned folder under /var/lib/postgresql.
+      - pgdata:/var/lib/postgresql
+      - ./postgres/10-roles.sh:/docker-entrypoint-initdb.d/10-roles.sh:ro
+      - ./postgres/20-tls.sh:/docker-entrypoint-initdb.d/20-tls.sh:ro
+    ports:
+      - '${POSTGRES_PORT}:5432'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # Applies the schema as the owner, then exits; the API and AI worker wait for it.
+  migrations:
+    image: ${NUNAM_REGISTRY}/nunam/nunam-migrations:${NUNAM_TAG}
+    container_name: nunam_migrations
+    restart: 'no'
+    environment:
+      NUNAM_MIGRATION_CONNECTION: Host=postgres;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD};SSL Mode=Require
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  nunam-api:
+    image: ${NUNAM_REGISTRY}/nunam/nunam-api:${NUNAM_TAG}
+    container_name: nunam_api
+    restart: unless-stopped
+    environment:
+      ConnectionStrings__Postgres: Host=postgres;Database=${POSTGRES_DB};Username=nunam_api;Password=${NUNAM_API_PASSWORD};SSL Mode=Require
+      # Only nginx can reach the API, so its X-Forwarded-* headers can be trusted.
+      Auth__TrustForwardedHeaders: 'true'
+      AI__Provider: ${AI_PROVIDER}
+      AI__BaseUrl: ${AI_BASE_URL}
+      AI__EmbeddingModel: ${AI_EMBEDDING_MODEL}
+      TZ: ${TZ}
+    depends_on:
+      migrations:
+        condition: service_completed_successfully
+
+  nunam-ui:
+    image: ${NUNAM_REGISTRY}/nunam/nunam-ui:${NUNAM_TAG}
+    container_name: nunam_ui
+    restart: unless-stopped
+    ports:
+      - '${UI_PORT}:80'
+    environment:
+      NUNAM_TRUSTED_PROXY: ${NUNAM_TRUSTED_PROXY:-127.0.0.1/32}
+      TZ: ${TZ}
+    depends_on:
+      - nunam-api
+
+  nunam-aiworker:
+    image: ${NUNAM_REGISTRY}/nunam/nunam-aiworker:${NUNAM_TAG}
+    container_name: nunam_aiworker
+    restart: unless-stopped
+    environment:
+      ConnectionStrings__Postgres: Host=postgres;Database=${POSTGRES_DB};Username=nunam_aiworker;Password=${NUNAM_AIWORKER_PASSWORD};SSL Mode=Require
+      AI__Provider: ${AI_PROVIDER}
+      AI__BaseUrl: ${AI_BASE_URL}
+      AI__ChatModel: ${AI_CHAT_MODEL}
+      AI__EmbeddingModel: ${AI_EMBEDDING_MODEL}
+      TZ: ${TZ}
+    depends_on:
+      migrations:
+        condition: service_completed_successfully
+
+volumes:
+  pgdata:

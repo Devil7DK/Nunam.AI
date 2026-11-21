@@ -1,6 +1,6 @@
 #!/bin/bash
 # Creates the database login for one indexed machine and prints its connection string.
-# Usage, from the repository root on the homelab: docker/add-indexer-login.sh <machine-name> [db-host]
+# Usage, on the server, from beside the Compose file: ./add-indexer-login.sh <machine-name> [db-host]
 # The login can only read and write that machine's rows (row-level security); give each machine its own.
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -15,9 +15,9 @@ password="$(head -c 32 /dev/urandom | base64 | tr -d '/+=;\n' | cut -c1-32)"
 
 # Settings come from the running container, not by sourcing .env: that file is Compose syntax, and a
 # password with a quote in it is valid there but breaks the shell.
-pg() { docker compose -f docker-compose.yml exec -T postgres "$@"; }
+pg() { docker compose exec -T postgres "$@"; }
 db="$(pg printenv POSTGRES_DB)"
-port="$(docker compose -f docker-compose.yml port postgres 5432 | sed 's/.*://')"
+port="$(docker compose port postgres 5432 | sed 's/.*://')"
 
 pg sh -c 'psql -v ON_ERROR_STOP=1 -q -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v role="$1" -v pw="$2"' sh "$role" "$password" <<'EOSQL'
 CREATE ROLE :"role" LOGIN PASSWORD :'pw' IN ROLE nunam_indexer;
@@ -29,7 +29,7 @@ cat <<EOT
 Created login $role.
 
 1. Save the database's certificate as nunam-db.crt in the indexer's folder
-   (C:\Program Files\Nunam\Indexer on Windows, /opt/nunam/indexer on Linux):
+   (C:\Program Files\Nunam\Indexer on Windows, /etc/nunam-indexer on Linux):
 
 $cert
 
