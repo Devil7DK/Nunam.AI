@@ -20,7 +20,9 @@ cat <<'MSG'
 Nunam indexer installed. To start it:
   1. Fill in /etc/nunam-indexer/appsettings.Local.json and save the database
      certificate as /etc/nunam-indexer/nunam-db.crt.
-  2. Let the nunam user read each watch path, e.g. for ~/Documents:
+  2. Either run it as yourself, so it reads what you can:
+       sudo nunam-indexer-account $USER
+     or let the nunam user read each watch path, e.g. for ~/Documents:
        sudo setfacl -m u:nunam:x ~
        sudo setfacl -R -m u:nunam:rX -m d:u:nunam:rX ~/Documents
   3. sudo systemctl enable --now nunam-indexer

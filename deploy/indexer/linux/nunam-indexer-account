@@ -1,0 +1,65 @@
+#!/bin/sh
+# Chooses the user the indexer service runs as.
+#   nunam-indexer-account            ask, showing the current one
+#   nunam-indexer-account <user>     run as <user>: reads what that user can, no ACLs needed
+#   nunam-indexer-account --default  back to the nunam system user
+# The choice is a systemd drop-in, so package upgrades keep it.
+set -e
+
+unit=nunam-indexer
+dropin_dir=/etc/systemd/system/$unit.service.d
+dropin=$dropin_dir/account.conf
+
+current=$(systemctl show -p User --value "$unit" 2>/dev/null || true)
+[ -n "$current" ] || current=nunam
+
+if [ "$(id -u)" -ne 0 ]; then
+    echo "Run it with sudo." >&2
+    exit 1
+fi
+
+choice=$1
+if [ -z "$choice" ]; then
+    me=${SUDO_USER:-}
+    echo "Which user should the indexer run as? It runs as $current now."
+    echo "  1  The nunam system user. Reads only what you grant it with setfacl."
+    if [ -n "$me" ] && [ "$me" != root ]; then
+        echo "  2  You, $me. Reads everything you can, mounted shares included, with no grants."
+    fi
+    echo "  3  Another user."
+    printf "Choose, or press Enter to keep %s: " "$current"
+    read -r answer
+    case "$answer" in
+        "") exit 0 ;;
+        1) choice=--default ;;
+        2) [ -n "$me" ] && [ "$me" != root ] || { echo "No such choice." >&2; exit 1; }; choice=$me ;;
+        3) printf "User: "; read -r choice ;;
+        *) echo "No such choice." >&2; exit 1 ;;
+    esac
+fi
+
+if [ "$choice" = --default ] || [ "$choice" = nunam ]; then
+    rm -f "$dropin"
+    rmdir "$dropin_dir" 2>/dev/null || true
+    user=nunam
+else
+    user=$choice
+    if ! uid=$(id -u "$user" 2>/dev/null); then
+        echo "No user named $user." >&2
+        exit 1
+    fi
+    # The sandbox drops every capability, so root would gain little, but it would read every file.
+    if [ "$uid" -eq 0 ]; then
+        echo "Not as root; grant the nunam user what it should read instead." >&2
+        exit 1
+    fi
+    mkdir -p "$dropin_dir"
+    # Group=nunam keeps the settings file (root:nunam, 0640) readable. systemd then adds the groups that
+    # list the user as a member, but not the user's own primary group.
+    printf '# Written by nunam-indexer-account.\n[Service]\nUser=%s\nGroup=nunam\nSupplementaryGroups=%s\n' \
+        "$user" "$(id -gn "$user")" > "$dropin"
+fi
+
+systemctl daemon-reload
+systemctl try-restart "$unit"
+echo "The indexer runs as $user."

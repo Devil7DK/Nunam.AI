@@ -8,4 +8,5 @@ fi
 # dpkg purges the settings file it installed; the certificate was added by hand.
 if [ "$1" = "purge" ]; then
     rm -rf /etc/nunam-indexer
+    rm -rf /etc/systemd/system/nunam-indexer.service.d
 fi

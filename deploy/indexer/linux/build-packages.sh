@@ -25,6 +25,7 @@ chmod -R u=rwX,go=rX "$lib"
 chmod 0755 "$lib/Nunam.Indexer"
 
 install -D -m 0644 "$here/nunam-indexer.service" "$root/usr/lib/systemd/system/nunam-indexer.service"
+install -D -m 0755 "$here/nunam-indexer-account" "$root/usr/sbin/nunam-indexer-account"
 install -D -m 0644 "$here/nunam-indexer.sysusers" "$root/usr/lib/sysusers.d/nunam-indexer.conf"
 install -D -m 0640 "$here/appsettings.Local.example.json" "$root/etc/nunam-indexer/appsettings.Local.json"
 chmod 0750 "$root/etc/nunam-indexer"

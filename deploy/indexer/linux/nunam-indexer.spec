@@ -27,6 +27,7 @@ cp -a %{tree}/. %{buildroot}/
 %files
 /usr/lib/nunam-indexer
 /usr/lib/systemd/system/nunam-indexer.service
+/usr/sbin/nunam-indexer-account
 /usr/lib/sysusers.d/nunam-indexer.conf
 %dir %attr(0750,root,root) /etc/nunam-indexer
 %config(noreplace) %attr(0640,root,root) /etc/nunam-indexer/appsettings.Local.json
