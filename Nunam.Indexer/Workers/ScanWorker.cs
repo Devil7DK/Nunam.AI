@@ -38,7 +38,7 @@ namespace Nunam.Indexer.Workers
 
                 if (!Directory.Exists(root))
                 {
-                    logger.LogWarning("Watch path does not exist, skipping: {Path}", root);
+                    logger.LogWarning("Watch path does not exist or the service can't open it, skipping: {Path}", root);
                     continue;
                 }
 
