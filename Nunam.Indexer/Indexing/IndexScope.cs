@@ -9,18 +9,15 @@ namespace Nunam.Indexer.Indexing
     /// </summary>
     public class IndexScope(IOptions<IndexerOptions> options, PathFilter pathFilter)
     {
-        private static readonly StringComparison PathComparison =
-            OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
-
         private readonly string[] _roots = [.. options.Value.WatchPaths
             .Where(r => !string.IsNullOrWhiteSpace(r))
-            .Select(r => Path.TrimEndingDirectorySeparator(Path.GetFullPath(r)))];
+            .Select(PathRules.Normalize)];
 
         /// <summary>Whether <paramref name="path"/> may be indexed; <paramref name="reason"/> says why not.</summary>
         public bool Allows(string path, out string reason)
         {
-            var full = Path.GetFullPath(path);
-            var root = RootOf(full);
+            var full = PathRules.Normalize(path);
+            var root = PathRules.RootOf(full, _roots);
             if (root is null)
             {
                 reason = "Path is outside this indexer's watch paths.";
@@ -54,10 +51,7 @@ namespace Nunam.Indexer.Indexing
         /// an unplugged drive: its files only look deleted.
         /// </summary>
         public bool IsUnderUnavailableRoot(string path) =>
-            RootOf(Path.GetFullPath(path)) is { } root && !Directory.Exists(root);
-
-        private string? RootOf(string fullPath) =>
-            _roots.FirstOrDefault(r => fullPath.StartsWith(r + Path.DirectorySeparatorChar, PathComparison));
+            PathRules.RootOf(PathRules.Normalize(path), _roots) is { } root && !Directory.Exists(root);
 
         /// <summary>Symlinks, junctions and other reparse points.</summary>
         public static bool IsLink(FileSystemInfo entry) =>
