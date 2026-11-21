@@ -65,12 +65,16 @@ deploy/indexer/linux/build-packages.sh   # artifacts/packages/nunam-indexer_<ver
 Install the one that fits: `sudo apt install ./nunam-indexer_0.1.0_amd64.deb` (Debian 12 or later, Ubuntu) or `sudo dnf install ./nunam-indexer-0.1.0-1.x86_64.rpm` (Fedora). The .NET runtime is included; ffmpeg (video) and Tesseract with English (OCR) come as recommended packages. Then:
 
 1. Fill in `/etc/nunam-indexer/appsettings.Local.json`, save the database certificate as `/etc/nunam-indexer/nunam-db.crt`, and use that path in the connection string. The file is readable only by root and the service.
-2. The service runs as the `nunam` system user, which can't read anyone's home folder. Let it read each watch path:
-   ```bash
-   sudo setfacl -m u:nunam:x ~                                  # pass through the home folder, not list it
-   sudo setfacl -R -m u:nunam:rX -m d:u:nunam:rX ~/Documents     # read everything in it, now and later
-   ```
-   With `/` as the watch path, do this for each home folder that should be indexed; a home folder the service can't enter is skipped.
+2. Choose the user it runs as. `sudo nunam-indexer-account` asks, or name one directly:
+   - **Yourself**, `sudo nunam-indexer-account $USER`. It reads everything you can, mounted shares included, and nothing needs granting. It still runs sandboxed, read-only.
+   - **The `nunam` system user** (the default, `sudo nunam-indexer-account --default`). It can't read anyone's home folder, so let it read each watch path:
+     ```bash
+     sudo setfacl -m u:nunam:x ~                                  # pass through the home folder, not list it
+     sudo setfacl -R -m u:nunam:rX -m d:u:nunam:rX ~/Documents     # read everything in it, now and later
+     ```
+     With `/` as the watch path, do this for each home folder that should be indexed; a home folder the service can't enter is skipped.
+
+   The choice is a systemd drop-in, `/etc/systemd/system/nunam-indexer.service.d/account.conf`, so upgrades keep it. Root is refused.
 3. `sudo systemctl enable --now nunam-indexer`. Logs: `journalctl -u nunam-indexer`.
 
 Installing a newer package keeps the settings and restarts the service. The service is sandboxed: it sees the filesystem read-only and writes only to its own `/tmp`.
