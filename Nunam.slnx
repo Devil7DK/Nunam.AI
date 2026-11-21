@@ -4,6 +4,7 @@
   <Project Path="Nunam.Core/Nunam.Core.csproj" Id="644c5bdb-10f7-47b8-aad3-4333f0183c99" />
   <Project Path="Nunam.Indexer.Abstractions/Nunam.Indexer.Abstractions.csproj" />
   <Project Path="Nunam.Indexer/Nunam.Indexer.csproj" Id="48e72ba2-119e-43d6-a1dd-a5dd65957ee1" />
+  <Project Path="samples/Nunam.Indexer.Plugins.OpenDocument/Nunam.Indexer.Plugins.OpenDocument.csproj" />
   <Project Path="Nunam.WebUI/nunam.webui.esproj">
     <Build />
     <Deploy />
