@@ -106,6 +106,8 @@ if ($Register) {
 }
 
 function Get-Sid([string]$name) {
+    # Windows stores a local account as .\name, which NTAccount can't translate.
+    if ($name.StartsWith(".\")) { $name = "$env:COMPUTERNAME\$($name.Substring(2))" }
     try { (New-Object Security.Principal.NTAccount($name)).Translate([Security.Principal.SecurityIdentifier]) } catch { $null }
 }
 
