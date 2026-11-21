@@ -185,6 +185,11 @@ namespace Nunam.API.Endpoints
             WatchPaths = s.WatchPaths?.Select(p => p.Trim()).Where(p => p.Length > 0).Distinct().ToArray(),
             ExcludePatterns = s.ExcludePatterns?.Select(p => p.Trim()).Where(p => p.Length > 0).Distinct().ToArray(),
             OcrLanguage = string.IsNullOrWhiteSpace(s.OcrLanguage) ? null : s.OcrLanguage.Trim(),
+            Parsers = s.Parsers?.ToDictionary(
+                p => p.Key.Trim().ToLowerInvariant(),
+                p => p.Value.Select(n => n.Trim().ToLowerInvariant()).Where(n => n.Length > 0).Distinct().ToArray()),
+            OcrEngine = string.IsNullOrWhiteSpace(s.OcrEngine) ? null : s.OcrEngine.Trim().ToLowerInvariant(),
+            PdfRenderer = string.IsNullOrWhiteSpace(s.PdfRenderer) ? null : s.PdfRenderer.Trim().ToLowerInvariant(),
         };
 
         private static async Task<ProblemHttpResult?> RemoteManagementOffAsync(NunamDbContext db, Guid machineId, CancellationToken cancellationToken) =>
