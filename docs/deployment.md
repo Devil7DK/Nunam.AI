@@ -4,7 +4,7 @@ The homelab runs Postgres (with pgvector), the API, the web UI and the AI worker
 
 ## 1. Ollama
 
-Ollama runs in its own GPU container on the homelab (`192.168.7.113`, `ollama/ollama:rocm`). It needs:
+Ollama runs on a machine with a GPU, for example in the `ollama/ollama` container (`ollama/ollama:rocm` for AMD cards). It needs:
 
 ```bash
 ollama pull gemma4:12b-it-qat   # describes images, scanned pages and video frames
