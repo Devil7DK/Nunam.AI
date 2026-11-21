@@ -20,6 +20,10 @@ namespace Nunam.API.Auth
                 .ToArrayAsync(cancellationToken);
         }
 
+        /// <summary>Admins and the machine's owners share it, and read and manage its indexer.</summary>
+        public Task<bool> CanManageAsync(ClaimsPrincipal user, Guid machineId, CancellationToken cancellationToken) =>
+            CanShareAsync(user, machineId, cancellationToken);
+
         public async Task<bool> CanShareAsync(ClaimsPrincipal user, Guid machineId, CancellationToken cancellationToken)
         {
             if (user.IsAdmin()) return true;

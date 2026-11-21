@@ -92,5 +92,6 @@ app.MapMachineAccessEndpoints();
 app.MapSearchEndpoints();
 app.MapFileEndpoints();
 app.MapStatusEndpoints();
+app.MapIndexerEndpoints();
 
 app.Run();
