@@ -778,7 +778,7 @@ From the first full security audit (2026-11-20; report kept outside the repo). S
 
 ### Phase 8 — Whole-drive indexing and installers
 - [x] Whole drive as a watch path, Linux — `/` works as a root (it never matched before); `Indexer:SkipSystemFolders` (on by default) skips the OS and program folders (`/usr`, `/etc`, `/var`, `/opt`, `/proc`, …), hidden folders in home folders and package caches inside a root, but not a root chosen inside one of them. Exclude patterns now match only below the root. The watcher goes folder by folder down to each skipped system folder instead of one recursive watch, which on `/` put an inotify watch on all of `/proc`. Checked on this workstation: `/` went from 543 k files to 227 k (home folders, `/srv`, `/mnt`), nothing under a skipped folder was queued, 28 watchers, no errors
-- [ ] Whole drive as a watch path, Windows (`C:\`)
+- [x] Whole drive as a watch path, Windows — `C:\` skips `Windows`, `Program Files`, `ProgramData`, `Recovery`, the recycle bin, update and setup folders, page and hibernation files, `Users\Default`, and in each profile `AppData`, hidden folders and the registry hives. Checked on the Windows 10 VM: 22 watchers (profiles and other top-level folders), a write in Documents was seen and one in `AppData` was not
 - [ ] Linux packages (`.deb`, `.rpm`)
 - [ ] Windows installer (`.msi`)
 - [ ] macOS — deferred; built and tested on a Mac later

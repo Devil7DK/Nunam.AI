@@ -20,10 +20,10 @@ Everything machine-specific goes in `appsettings.Local.json` next to the executa
 |---|---|
 | `ConnectionStrings:Postgres` | The machine's own database login: run `docker/add-indexer-login.sh <machine-name>` on the homelab, save the certificate it prints as `nunam-db.crt` in the install folder, and paste the connection string with that file's full path. Don't share one login between machines. |
 | `Syncfusion:LicenseKey` | Without it documents are parsed in evaluation mode. |
-| `Indexer:WatchPaths` | Folders to index, recursively. A whole drive works too (`/`); see `SkipSystemFolders`. |
+| `Indexer:WatchPaths` | Folders to index, recursively. A whole drive works too (`/`, `C:\`); see `SkipSystemFolders`. |
 | `Indexer:MachineName` | Name shown in the UI; defaults to the hostname. The machine is identified by hostname, so renaming here keeps its files. |
 | `Indexer:ExcludePatterns` | Defaults skip `.git`, `node_modules`, `bin`, `obj` and similar. Use `/` as the separator on every OS. Patterns match only below the watch path, so a watch path that is itself a `bin` folder is still indexed. |
-| `Indexer:SkipSystemFolders` | `true` by default: inside a watch path, skip the operating system and installed programs (on Linux `/usr`, `/etc`, `/var`, `/opt`, `/proc` and the like), hidden folders in home folders (`~/.config`, `~/.local`, SDKs and app data), and package caches (`.cache`, `.nuget/packages`, `.venv`). A watch path inside one of those, such as `/opt/wiki`, is still indexed. |
+| `Indexer:SkipSystemFolders` | `true` by default: inside a watch path, skip the operating system and installed programs (on Linux `/usr`, `/etc`, `/var`, `/opt`, `/proc` and the like; on Windows `Windows`, `Program Files`, `ProgramData`, the recycle bin, the page file), app data in home folders (hidden folders such as `~/.config` and `~/.local`, and `AppData` on Windows), and package caches (`.cache`, `.nuget/packages`, `.venv`). A watch path inside one of those, such as `/opt/wiki`, is still indexed. |
 | `Indexer:FFmpegBinaryFolder` | Only if ffmpeg isn't on `PATH`. |
 | `Indexer:OcrLanguage` | `eng` by default. For more, put the `.traineddata` files (e.g. `tam`) together with `eng.traineddata` in a folder, set `Indexer:OcrTessDataPath` to it, and use `eng+tam`. |
 
