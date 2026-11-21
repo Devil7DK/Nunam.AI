@@ -4,6 +4,7 @@ using Nunam.Core.Data;
 using Nunam.Core.Entities;
 using Nunam.Core.Jobs;
 using Nunam.Indexer.Indexing;
+using Nunam.Indexer.Management;
 using Nunam.Indexer.Parsing;
 
 namespace Nunam.Indexer.Workers
@@ -19,6 +20,7 @@ namespace Nunam.Indexer.Workers
         IServiceScopeFactory scopeFactory,
         MachineContext machine,
         IndexScope scope,
+        IndexerControl control,
         IOptions<IndexerOptions> options,
         ILogger<ParseWorker> logger) : PollingWorker(logger)
     {
@@ -42,6 +44,8 @@ namespace Nunam.Indexer.Workers
 
         protected override async Task<PollResult> PollAsync(CancellationToken cancellationToken)
         {
+            if (control.Paused) return PollResult.NoWork;
+
             using var scope = scopeFactory.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<NunamDbContext>();
             var queue = scope.ServiceProvider.GetRequiredService<JobQueue>();

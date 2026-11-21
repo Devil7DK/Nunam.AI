@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Nunam.Core.Data;
 using Nunam.Core.Entities;
+using Nunam.Indexer.Management;
 
 namespace Nunam.Indexer.Indexing
 {
@@ -13,6 +14,7 @@ namespace Nunam.Indexer.Indexing
     public class MachineInitializer(
         IServiceScopeFactory scopeFactory,
         MachineContext context,
+        IndexerControl control,
         IOptions<IndexerOptions> options,
         ILogger<MachineInitializer> logger) : IHostedService
     {
@@ -52,6 +54,7 @@ namespace Nunam.Indexer.Indexing
             }
 
             context.Set(machine.Id, machine.Name, hostname);
+            control.MachineId = machine.Id;
 
             logger.LogInformation("Machine identity resolved: {MachineId}", machine.Id);
         }

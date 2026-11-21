@@ -8,6 +8,12 @@ namespace Nunam.Indexer
     {
         public const string SectionName = "Indexer";
 
+        /// <summary>
+        /// Lets admins and the machine's owners change some settings and restart, pause or resume the
+        /// indexer from the UI. Only this machine's own settings can turn it on.
+        /// </summary>
+        public bool RemoteManagement { get; set; }
+
         /// <summary>Friendly machine name. Falls back to the OS hostname when blank.</summary>
         public string? MachineName { get; set; }
 

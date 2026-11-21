@@ -1,10 +1,5 @@
-using Microsoft.EntityFrameworkCore;
-using Nunam.Core.Data;
-using Nunam.Core.Jobs;
-using Nunam.Indexer;
-using Nunam.Indexer.Indexing;
-using Nunam.Indexer.Parsing;
-using Nunam.Indexer.Workers;
+using Npgsql;
+using Nunam.Indexer.Management;
 
 // Config files live next to the executable, and a service doesn't start there (a Windows service
 // starts in System32), so the content root is the executable's folder rather than the current one.
@@ -23,48 +18,14 @@ builder.Configuration
 builder.Services.AddWindowsService(o => o.ServiceName = "Nunam.Indexer");
 builder.Services.AddSystemd();
 
-builder.Services.Configure<IndexerOptions>(
-    builder.Configuration.GetSection(IndexerOptions.SectionName));
-
-// Stored paths must be absolute, or the same file indexed from two working directories would
-// look like two files.
-builder.Services.PostConfigure<IndexerOptions>(o =>
-    o.WatchPaths = [.. o.WatchPaths.Select(p => Path.GetFullPath(p))]);
-
-// Shared DB + queue access.
-builder.Services.AddDbContext<NunamDbContext>(opt =>
-    opt.UseNpgsql(
-        builder.Configuration.GetConnectionString("Postgres"),
-        npg => npg.UseVector()));
-builder.Services.AddScoped<JobQueue>();
-
-// Machine identity + path filtering (resolved once, shared everywhere).
-builder.Services.AddSingleton<MachineContext>();
-builder.Services.AddSingleton<PathFilter>();
-builder.Services.AddSingleton<FileTree>();
-builder.Services.AddSingleton<IndexScope>();
-
-// Parsing pipeline. Registration order matters: specialized parsers first, fallback last.
-builder.Services.AddSingleton<FileTypeDetector>();
-builder.Services.AddSingleton<ParserSelector>();
-builder.Services.AddSingleton<OcrService>();
-builder.Services.AddSingleton<IFileParser, TextParser>();
-builder.Services.AddSingleton<IFileParser, PdfParser>();
-builder.Services.AddSingleton<IFileParser, WordParser>();
-builder.Services.AddSingleton<IFileParser, ExcelParser>();
-builder.Services.AddSingleton<IFileParser, PowerPointParser>();
-builder.Services.AddSingleton<IFileParser, ImageParser>();
-builder.Services.AddSingleton<IFileParser, AudioParser>();
-builder.Services.AddSingleton<IFileParser, VideoParser>();
-builder.Services.AddSingleton<IFileParser, FallbackParser>();
-
-// Resolve this machine's identity before any worker runs.
-builder.Services.AddHostedService<MachineInitializer>();
-
-// Producers (enqueue Parse jobs) + consumer (parses and enqueues AI follow-ups).
-builder.Services.AddHostedService<ScanWorker>();
-builder.Services.AddHostedService<WatcherWorker>();
-builder.Services.AddHostedService<ParseWorker>();
+// The process only keeps the service alive and the logs flowing; IndexerSupervisor runs the workers.
+var databaseLogs = new DatabaseLoggerProvider();
+builder.Logging.AddProvider(databaseLogs);
+builder.Services.AddSingleton(databaseLogs);
+builder.Services.AddSingleton<IndexerControl>();
+builder.Services.AddSingleton(_ => NpgsqlDataSource.Create(builder.Configuration.GetConnectionString("Postgres")!));
+builder.Services.AddHostedService<DatabaseLogShipper>();
+builder.Services.AddHostedService<IndexerSupervisor>();
 
 var host = builder.Build();
 

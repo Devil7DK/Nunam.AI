@@ -3,6 +3,7 @@ using Microsoft.Extensions.Options;
 using Nunam.Core.Data;
 using Nunam.Core.Jobs;
 using Nunam.Indexer.Indexing;
+using Nunam.Indexer.Management;
 
 namespace Nunam.Indexer.Workers
 {
@@ -18,6 +19,7 @@ namespace Nunam.Indexer.Workers
         MachineContext machine,
         FileTree fileTree,
         IndexScope indexScope,
+        IndexerControl control,
         IOptions<IndexerOptions> options,
         ILogger<ScanWorker> logger) : BackgroundService
     {
@@ -31,6 +33,7 @@ namespace Nunam.Indexer.Workers
                 return;
             }
 
+            control.ScanStartedAt = DateTimeOffset.UtcNow;
             var enqueued = 0;
             foreach (var root in _options.WatchPaths)
             {
@@ -47,6 +50,7 @@ namespace Nunam.Indexer.Workers
             }
 
             var (missing, outOfScope) = await RemoveStaleAsync(stoppingToken);
+            control.ScanFinishedAt = DateTimeOffset.UtcNow;
             logger.LogInformation(
                 "Startup scan complete. Enqueued {Count} Parse job(s), removed {Missing} missing file(s) and {OutOfScope} no longer in the watch paths.",
                 enqueued, missing, outOfScope);
