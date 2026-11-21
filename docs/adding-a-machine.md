@@ -14,7 +14,7 @@ Tesseract (OCR), PDFium and SkiaSharp come with the NuGet packages.
 
 ## Settings
 
-Everything machine-specific goes in `appsettings.Local.json` next to the executable (on Linux, `/etc/nunam-indexer/appsettings.Local.json`) — start from `deploy/indexer/appsettings.Local.example.json`:
+Everything machine-specific goes in `appsettings.Local.json` next to the executable (on Linux, `/etc/nunam-indexer/appsettings.Local.json`) — start from `appsettings.Local.example.json` in `deploy/indexer/windows` or `deploy/indexer/linux`:
 
 | Setting | |
 |---|---|
@@ -27,21 +27,27 @@ Everything machine-specific goes in `appsettings.Local.json` next to the executa
 | `Indexer:FFmpegBinaryFolder` | Only if ffmpeg isn't on `PATH`. |
 | `Indexer:OcrLanguage` | `eng` by default. For more, put the `.traineddata` files (e.g. `tam`) together with `eng.traineddata` in a folder, set `Indexer:OcrTessDataPath` to it, and use `eng+tam`. |
 
-The file holds secrets; the Windows installer restricts it to Administrators and SYSTEM.
+The file holds secrets: on Windows only Administrators, SYSTEM and the service can read it, on Linux only root and the service.
 
 ## Windows
 
-From the repository root, in an elevated PowerShell:
+Build the installer on a Linux machine with the .NET SDK and msitools (`dnf install msitools`, `apt install wixl`):
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\deploy\indexer\install-windows.ps1
+```bash
+deploy/indexer/windows/build-msi.sh   # artifacts/packages/nunam-indexer-<version>-x64.msi
 ```
 
-`-ExecutionPolicy Bypass` applies to that run only; Windows' default policy blocks unsigned scripts.
+Run the MSI on the Windows machine. It installs the indexer to `C:\Program Files\Nunam\Indexer` with its own .NET runtime, and registers the `Nunam.Indexer` service. The service stays stopped until the settings are filled in. Then open Start → **Configure Nunam Indexer**. It asks for administrator rights, opens `appsettings.Local.json` in Notepad and waits for you to save and close it. It then sets the service to delayed automatic start that restarts on failure, grants read access to the watch paths and starts it. Run it again after changing the watch paths. Installing a newer MSI keeps the settings and starts the service again on its own. OCR needs the [Visual C++ 2015–2022 x64 runtime](https://aka.ms/vs/17/release/vc_redist.x64.exe); video needs ffmpeg on `PATH` or `Indexer:FFmpegBinaryFolder`.
 
-The first run publishes to `C:\Program Files\Nunam\Indexer`, creates `appsettings.Local.json` and opens it in Notepad. Fill it in and run the script again: it installs the `Nunam.Indexer` service (automatic, delayed start, restarts on failure) and starts it. Later runs update the binaries and keep the settings.
+The service runs as its own virtual account, `NT SERVICE\Nunam.Indexer`, which can read only what it is given. A subfolder that blocks inherited permissions stays unreadable, and its files are logged as failed. With a whole drive or `C:\Users` as the watch path, each profile's own folders (Documents, Desktop, Pictures, …) are granted instead of the drive. `AppData` and hidden folders are left out, and the rest of the drive is readable to the Users group anyway.
 
-The service runs as its own virtual account, `NT SERVICE\Nunam.Indexer`, which can read only what it is given: each run grants it read access to every watch path in `appsettings.Local.json` (so after adding a watch path, run the script again). A subfolder that blocks inherited permissions stays unreadable, and its files are logged as failed. The account can't reach network shares; to index a share, install with `-Account DOMAIN\user` for an account that can. `-Account LocalSystem` reads everything without grants, but then a flaw in a file parser would control the whole machine.
+The account can't reach network shares. To index a share, run the script from an elevated PowerShell with `-Account DOMAIN\user` for an account that can; it asks for the password:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File "C:\Program Files\Nunam\Indexer\Configure-Indexer.ps1" -Account DOMAIN\user
+```
+
+An upgrade puts the service back on the virtual account, so run that again after one. `-Account LocalSystem` reads everything without grants, but then a flaw in a file parser would control the whole machine.
 
 Warnings and errors go to Event Viewer → Windows Logs → Application.
 
@@ -74,7 +80,7 @@ Only admins see the new machine at first. To let others search it, open *Index s
 
 ## Removing a machine
 
-Remove the package (`sudo apt remove nunam-indexer`, `sudo dnf remove nunam-indexer`) or, on Windows, stop and remove the service (`sc.exe delete Nunam.Indexer`) and the read grants (`icacls <watch path> /remove "NT SERVICE\Nunam.Indexer"` for each). Then delete its rows; files and jobs go with the machine:
+Uninstall it (Windows: *Settings → Apps → Nunam Indexer*; Linux: `sudo apt remove nunam-indexer` or `sudo dnf remove nunam-indexer`). On Windows `appsettings.Local.json` stays in the install folder; also remove the read grants (`icacls <watch path> /remove "NT SERVICE\Nunam.Indexer"` for each). Then delete its rows; files and jobs go with the machine:
 
 ```sql
 DELETE FROM machines WHERE name = 'laptop';

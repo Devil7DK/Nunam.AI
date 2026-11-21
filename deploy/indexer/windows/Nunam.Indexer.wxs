@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Built by build-msi.sh with wixl (msitools); files.wxs lists the published files. -->
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Product Id="*" Name="Nunam Indexer" Language="1033" Version="$(var.Version)" Manufacturer="Nunam"
+           UpgradeCode="19B03093-7BCF-4205-AFFA-1DEDEEE315D2">
+    <Package InstallerVersion="500" Compressed="yes" InstallScope="perMachine"
+             Description="Indexes local files into the Nunam search index" />
+    <Media Id="1" Cabinet="indexer.cab" EmbedCab="yes" />
+    <MajorUpgrade DowngradeErrorMessage="A newer Nunam Indexer is already installed." />
+    <!-- wixl records no file versions or hashes, so on an upgrade every file looks unversioned and already
+         present: Windows Installer plans to keep it, then removing the old version deletes it. "a" copies
+         every file regardless. -->
+    <Property Id="REINSTALLMODE" Value="amus" />
+
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="ProgramFiles64Folder">
+        <Directory Id="NunamFolder" Name="Nunam">
+          <Directory Id="INSTALLDIR" Name="Indexer" />
+        </Directory>
+      </Directory>
+      <Directory Id="ProgramMenuFolder" />
+    </Directory>
+
+    <DirectoryRef Id="INSTALLDIR">
+      <!-- The service has to be in the component that installs its executable. Stopped, not started:
+           until appsettings.Local.json is filled in it could only fail. -->
+      <Component Id="Service" Guid="5E1B6F0A-2C1D-4B57-9E07-3F1C8A0D6B21" Win64="yes">
+        <File Id="ServiceExe" Name="Nunam.Indexer.exe" Source="$(var.SourceDir)/Nunam.Indexer.exe" KeyPath="yes" />
+        <ServiceInstall Id="ServiceInstall" Name="Nunam.Indexer" DisplayName="Nunam Indexer"
+                        Description="Indexes local files into the Nunam search index." Type="ownProcess"
+                        Start="auto" ErrorControl="normal" Account="NT SERVICE\Nunam.Indexer" />
+        <ServiceControl Id="ServiceControl" Name="Nunam.Indexer" Stop="both" Remove="uninstall" Wait="yes" />
+      </Component>
+      <Component Id="Configure" Guid="9C4D2E7B-61A8-4F0C-B3D5-7A2E9F14C6D8" Win64="yes">
+        <File Id="ConfigureScript" Name="Configure-Indexer.ps1" Source="$(var.ScriptDir)/Configure-Indexer.ps1" KeyPath="yes" />
+        <File Id="SettingsExample" Name="appsettings.Local.example.json" Source="$(var.ScriptDir)/appsettings.Local.example.json" />
+      </Component>
+    </DirectoryRef>
+
+    <DirectoryRef Id="ProgramMenuFolder">
+      <Component Id="Shortcut" Guid="2F7A9B3C-8D4E-4A61-95B2-C0E1D3F4A5B6" Win64="yes">
+        <Shortcut Id="ConfigureShortcut" Name="Configure Nunam Indexer"
+                  Description="Fill in the settings, grant access to the watch paths and start the service"
+                  Target="[System64Folder]WindowsPowerShell\v1.0\powershell.exe"
+                  Arguments="-NoProfile -ExecutionPolicy Bypass -File &quot;[INSTALLDIR]Configure-Indexer.ps1&quot;"
+                  WorkingDirectory="INSTALLDIR" />
+        <RegistryValue Root="HKLM" Key="Software\Nunam\Indexer" Name="Shortcut" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+
+    <!-- An upgrade reinstalls the service with the settings above; the script puts back delayed start,
+         restart on failure and the grants, and starts it again when the settings are filled in. -->
+    <CustomAction Id="FindPowerShell" Property="POWERSHELL" Value="[System64Folder]WindowsPowerShell\v1.0\powershell.exe" />
+    <CustomAction Id="Reconfigure" Property="POWERSHELL" Execute="deferred" Impersonate="no" Return="ignore"
+                  ExeCommand="-NoProfile -ExecutionPolicy Bypass -File &quot;[INSTALLDIR]Configure-Indexer.ps1&quot; -Unattended" />
+    <InstallExecuteSequence>
+      <Custom Action="FindPowerShell" Before="InstallInitialize">NOT REMOVE</Custom>
+      <Custom Action="Reconfigure" After="StartServices">NOT REMOVE</Custom>
+    </InstallExecuteSequence>
+
+    <Feature Id="Main" Level="1">
+      <ComponentRef Id="Service" />
+      <ComponentRef Id="Configure" />
+      <ComponentRef Id="Shortcut" />
+      <ComponentGroupRef Id="PublishedFiles" />
+    </Feature>
+  </Product>
+</Wix>
