@@ -16,13 +16,15 @@ export interface Doc {
   headings: { id: string; text: string }[];
 }
 
-const ORDER = ['overview', 'deployment', 'adding-a-machine'];
+const ORDER = ['overview', 'deployment', 'adding-a-machine', 'extending-the-indexer'];
 
 const SUMMARIES: Record<string, string> = {
   overview: 'What runs where, and what leaves each machine.',
   deployment: 'Postgres, the API, the web UI and the AI worker in Docker.',
   'adding-a-machine':
     'Install the indexer on Windows or Linux and point it at your folders.',
+  'extending-the-indexer':
+    'Choose parsers per file type, or add your own with commands and plugins.',
 };
 
 const slugify = (text: string): string =>

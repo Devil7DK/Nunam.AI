@@ -26,6 +26,7 @@ Everything machine-specific goes in `appsettings.Local.json` next to the executa
 | `Indexer:FFmpegBinaryFolder` | Only if ffmpeg isn't on `PATH`. |
 | `Indexer:OcrLanguage` | `eng` by default. Use `eng+tam` and the like for more; each language needs its Tesseract data (`apt install tesseract-ocr-tam`, `dnf install tesseract-langpack-tam`, or a ticked language in the Windows installer). `Indexer:OcrTessDataPath` points at a different tessdata folder. |
 | `Indexer:OcrTesseractPath` | Only if `tesseract` isn't on `PATH` (or, on Windows, in `C:\Program Files\Tesseract-OCR`). |
+| `Indexer:Parsers`, `OcrEngine`, `PdfRenderer`, `Commands`, `PluginFolder` | Which parser reads which extension, and other programs or plugins to read files with. See [extending the indexer](extending-the-indexer.md). |
 
 The file holds secrets: on Windows only Administrators, SYSTEM and the service can read it, on Linux only root and the service.
 
@@ -80,16 +81,16 @@ Only admins see the new machine at first. To let others search it, open *Index s
 
 ## Managing it from the web UI
 
-**Machines** in the UI's header lists every machine you can see. Each indexer reports to the database every 30 seconds, and sends its log entries every few seconds. A machine that hasn't reported for 90 seconds shows as offline. Everyone who can see a machine sees whether it's online, its watch paths and its job queue. Admins and the machine's owners also see its logs (kept 7 days) and the settings in effect, with where each value came from. Passwords and the license key are never sent.
+**Machines** in the UI's header lists every machine you can see. Each indexer reports to the database every 30 seconds, and sends its log entries every few seconds. A machine that hasn't reported for 90 seconds shows as offline. Everyone who can see a machine sees whether it's online, its watch paths and its job queue. Admins and the machine's owners also see its logs (kept 7 days) and the settings in effect, with where each value came from. Passwords are never sent.
 
 With `Indexer:RemoteManagement` on, admins and owners can also do these from the same page:
 
 - **Pause and resume parsing.** Changes are still queued while paused. Restarting the service resumes.
 - **Restart and rescan.** Only the workers restart, so the Windows or systemd service keeps running.
 - **Retry failed files.**
-- **Change settings:** machine name, watch paths, exclude patterns, skipping system folders, size limits and OCR. A changed setting overrides the machine's own value until it's cleared, and saving restarts the indexer.
+- **Change settings:** machine name, watch paths, exclude patterns, skipping system folders, size limits, OCR, and which built-in parser reads each extension. A changed setting overrides the machine's own value until it's cleared, and saving restarts the indexer.
 
-Settings that run programs or load data files (ffmpeg, tessdata, the connection string) can only be changed on the machine. On Windows, a new watch path also needs *Configure Nunam Indexer* run on the machine, so the service account may read it.
+Settings that run programs or load code or data files (ffmpeg, Tesseract, commands, plugins, tessdata, the connection string) can only be changed on the machine. On Windows, a new watch path also needs *Configure Nunam Indexer* run on the machine, so the service account may read it.
 
 All of this goes through the database: the indexer opens no port.
 

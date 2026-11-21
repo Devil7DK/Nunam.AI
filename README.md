@@ -9,6 +9,7 @@ Website and docs: <https://nunam.dineshkumar.dev>
 - [How Nunam works](docs/overview.md)
 - [Deploying the server](docs/deployment.md)
 - [Adding a machine to the index](docs/adding-a-machine.md)
+- [Extending the indexer](docs/extending-the-indexer.md)
 
 ## Repository
 
@@ -16,11 +17,13 @@ Website and docs: <https://nunam.dineshkumar.dev>
 |---|---|
 | `Nunam.Core` | Entities, database context and migrations, AI client, job queue |
 | `Nunam.Indexer` | The per-machine indexer (Windows service, systemd unit) |
+| `Nunam.Indexer.Abstractions` | Contracts for indexer plugins: parsers, OCR engines, PDF renderers |
 | `Nunam.AIWorker` | Describes images and embeds files, on the server |
 | `Nunam.API` | Search, previews, accounts and machine management |
 | `Nunam.WebUI` | The React web UI |
 | `docker/` | Compose stack built from source, Postgres init scripts |
 | `deploy/` | Indexer installers (MSI, deb, rpm) and the server stack on registry images |
+| `samples/` | An example indexer plugin that reads OpenDocument files |
 | `website/` | The public website |
 
 Build with the .NET 10 SDK: `dotnet build Nunam.slnx`.
