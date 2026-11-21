@@ -250,3 +250,112 @@ export function generateTemporaryPassword(): string {
   }
   return [0, 5, 10].map((i) => chars.slice(i, i + 5).join('')).join('-');
 }
+
+export type IndexerState = 'running' | 'scanning' | 'paused';
+export type IndexerCommandKind = 'restart' | 'pause' | 'resume' | 'retryFailed';
+export type LogLevel = 'trace' | 'debug' | 'information' | 'warning' | 'error' | 'critical';
+
+export interface IndexerListItem {
+  machineId: string;
+  name: string;
+  hostname: string;
+  fileCount: number;
+  online: boolean;
+  state: IndexerState | null;
+  reportedAt: string | null;
+  version: string | null;
+  remoteManagement: boolean;
+  queued: number;
+  failed: number;
+  canManage: boolean;
+}
+
+export interface ConfigEntry {
+  key: string;
+  value: string | null;
+  source: 'default' | 'local' | 'remote';
+}
+
+export interface IndexerStatusInfo {
+  online: boolean;
+  reportedAt: string;
+  processStartedAt: string;
+  startedAt: string;
+  version: string;
+  operatingSystem: string;
+  serviceAccount: string | null;
+  state: IndexerState;
+  remoteManagement: boolean;
+  appliedRevision: number | null;
+  scanStartedAt: string | null;
+  scanFinishedAt: string | null;
+  watchPaths: { path: string; available: boolean; problem: string | null }[];
+  /** Only for admins and the machine's owners. */
+  config: ConfigEntry[] | null;
+}
+
+/** A null field keeps the machine's own value. */
+export interface RemoteIndexerSettings {
+  machineName?: string | null;
+  watchPaths?: string[] | null;
+  excludePatterns?: string[] | null;
+  skipSystemFolders?: boolean | null;
+  maxFileSizeMb?: number | null;
+  maxPreviewMb?: number | null;
+  enableOcr?: boolean | null;
+  ocrLanguage?: string | null;
+}
+
+export interface IndexerSettingsInfo {
+  settings: RemoteIndexerSettings;
+  revision: number;
+  updatedBy: string;
+  updatedAt: string;
+}
+
+export interface IndexerCommandInfo {
+  id: string;
+  kind: IndexerCommandKind;
+  status: 'pending' | 'done' | 'failed' | 'rejected';
+  requestedBy: string;
+  requestedAt: string;
+  completedAt: string | null;
+  result: string | null;
+}
+
+export interface IndexerDetails {
+  machineId: string;
+  name: string;
+  hostname: string;
+  fileCount: number;
+  lastIndexedAt: string | null;
+  canManage: boolean;
+  status: IndexerStatusInfo | null;
+  jobs: JobCount[];
+  settings: IndexerSettingsInfo | null;
+  commands: IndexerCommandInfo[] | null;
+}
+
+export interface IndexerLogEntry {
+  id: string;
+  at: string;
+  level: LogLevel;
+  category: string;
+  message: string;
+  exception: string | null;
+}
+
+export const getIndexers = (signal?: AbortSignal) => getJson<IndexerListItem[]>('/api/indexers', signal);
+export const getIndexer = (machineId: string, signal?: AbortSignal) =>
+  getJson<IndexerDetails>(`/api/machines/${machineId}/indexer`, signal);
+export function getIndexerLogs(machineId: string, options: { level?: LogLevel; before?: string; limit?: number } = {}, signal?: AbortSignal) {
+  const query = new URLSearchParams();
+  if (options.level) query.set('level', options.level);
+  if (options.before) query.set('before', options.before);
+  if (options.limit) query.set('limit', String(options.limit));
+  return getJson<IndexerLogEntry[]>(`/api/machines/${machineId}/indexer/logs?${query}`, signal);
+}
+export const sendIndexerCommand = (machineId: string, kind: IndexerCommandKind) =>
+  send<IndexerCommandInfo>('POST', `/api/machines/${machineId}/indexer/commands`, { kind });
+export const saveIndexerSettings = (machineId: string, settings: RemoteIndexerSettings) =>
+  send<IndexerSettingsInfo>('PUT', `/api/machines/${machineId}/indexer/settings`, settings);

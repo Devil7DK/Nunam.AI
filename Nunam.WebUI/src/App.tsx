@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { SlidersHorizontal } from 'lucide-react';
+import { Server, SlidersHorizontal } from 'lucide-react';
 import { getMachines, getStatus, type IndexStatus, type MachineSummary, type SearchResult } from '@/api/nunam';
 import { AccountMenu } from '@/components/AccountMenu';
 import { FilterPanel } from '@/components/FilterPanel';
 import { IndexStatusDialog } from '@/components/IndexStatusDialog';
+import { MachinesPage } from '@/components/machines/MachinesPage';
 import { PreviewModal } from '@/components/PreviewModal';
 import { SearchBar } from '@/components/SearchBar';
 import { SearchResults } from '@/components/SearchResults';
@@ -11,6 +12,7 @@ import { StatusLine } from '@/components/StatusLine';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { Button } from '@/components/ui/button';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
+import { useRoute } from '@/hooks/useRoute';
 import { useSearch } from '@/hooks/useSearch';
 import { useTheme } from '@/hooks/useTheme';
 import { useUrlState } from '@/hooks/useUrlState';
@@ -18,6 +20,7 @@ import { useUrlState } from '@/hooks/useUrlState';
 const STATUS_REFRESH_MS = 60_000;
 
 export default function App() {
+  const [route, navigate] = useRoute();
   const [theme, setTheme] = useTheme();
   const [filters, setFilters] = useUrlState();
   const [machines, setMachines] = useState<MachineSummary[]>([]);
@@ -57,6 +60,31 @@ export default function App() {
   }, []);
 
   const activeFilters = [filters.type, filters.machine, filters.ext, filters.from, filters.to].filter(Boolean).length;
+  const headerActions = (
+    <>
+      <Button variant="ghost" size="sm" onClick={() => navigate('/machines')} aria-current={route.page === 'machines' ? 'page' : undefined}>
+        <Server />
+        <span className="hidden sm:inline">Machines</span>
+      </Button>
+      <ThemeToggle theme={theme} onChange={setTheme} />
+      <AccountMenu />
+    </>
+  );
+
+  if (route.page === 'machines') {
+    return (
+      <div className="min-h-svh bg-background text-foreground">
+        <header className="sticky top-0 z-20 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+          <div className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-3">
+            <button type="button" className="text-lg font-semibold tracking-tight" onClick={() => navigate('/')}>Nunam</button>
+            <div className="flex-1" />
+            {headerActions}
+          </div>
+        </header>
+        <MachinesPage machineId={route.machineId} onNavigate={navigate} />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-svh bg-background text-foreground">
@@ -67,8 +95,7 @@ export default function App() {
             <div className="flex-1">
               <StatusLine status={status} onClick={() => setShowStatus(true)} />
             </div>
-            <ThemeToggle theme={theme} onChange={setTheme} />
-            <AccountMenu />
+            {headerActions}
           </div>
           <SearchBar
             query={filters.q}
