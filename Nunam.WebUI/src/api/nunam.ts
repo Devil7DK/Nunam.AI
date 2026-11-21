@@ -304,6 +304,9 @@ export interface RemoteIndexerSettings {
   maxPreviewMb?: number | null;
   enableOcr?: boolean | null;
   ocrLanguage?: string | null;
+  parsers?: Record<string, string[]> | null;
+  ocrEngine?: string | null;
+  pdfRenderer?: string | null;
 }
 
 export interface IndexerSettingsInfo {

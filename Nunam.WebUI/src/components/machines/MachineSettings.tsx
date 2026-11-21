@@ -7,14 +7,19 @@ import { Input } from '@/components/ui/input';
 import { fieldMessages } from '@/lib/forms';
 import { formatDateTime } from '@/lib/format';
 
-type Kind = 'text' | 'lines' | 'number' | 'bool';
+type Kind = 'text' | 'lines' | 'number' | 'bool' | 'select' | 'map';
 interface FieldDef {
   key: keyof RemoteIndexerSettings;
   option: string;
   label: string;
   kind: Kind;
   hint?: string;
+  choices?: string[];
 }
+
+const parserNames = [
+  'text', 'pdfpig', 'openxml-word', 'word97', 'rtf', 'exceldatareader', 'openxml-powerpoint', 'image', 'taglib', 'ffmpeg', 'fallback',
+];
 
 const fields: FieldDef[] = [
   { key: 'machineName', option: 'MachineName', label: 'Machine name', kind: 'text', hint: 'Shown in the UI; the machine is still matched by hostname.' },
@@ -25,6 +30,15 @@ const fields: FieldDef[] = [
   { key: 'maxPreviewMb', option: 'MaxPreviewMb', label: 'Largest image to preview (MB)', kind: 'number' },
   { key: 'enableOcr', option: 'EnableOcr', label: 'Read text in images (OCR)', kind: 'bool' },
   { key: 'ocrLanguage', option: 'OcrLanguage', label: 'OCR languages', kind: 'text', hint: 'Such as eng or eng+tam; each needs its language data on the machine.' },
+  { key: 'ocrEngine', option: 'OcrEngine', label: 'OCR engine', kind: 'select', choices: ['tesseract', 'none'], hint: 'Commands and plugins can only be chosen on the machine.' },
+  { key: 'pdfRenderer', option: 'PdfRenderer', label: 'PDF renderer', kind: 'select', choices: ['pdfium', 'none'], hint: 'Renders scanned PDFs for their preview and OCR.' },
+  {
+    key: 'parsers',
+    option: 'Parsers',
+    label: 'Parsers by extension',
+    kind: 'map',
+    hint: `One extension per line with the parsers to try in order, such as ".pdf: pdfpig". Replaces only the extensions listed. Built-in parsers: ${parserNames.join(', ')}.`,
+  },
 ];
 
 type FormState = Record<string, { set: boolean; value: string }>;
@@ -32,7 +46,23 @@ type FormState = Record<string, { set: boolean; value: string }>;
 function toText(value: unknown): string {
   if (value === null || value === undefined) return '';
   if (Array.isArray(value)) return value.join('\n');
+  if (typeof value === 'object') {
+    return Object.entries(value as Record<string, string[]>).map(([ext, names]) => `${ext}: ${names.join(', ')}`).join('\n');
+  }
   return String(value);
+}
+
+/** ".pdf: pdfpig, fallback" lines to a map; a line without a colon or parsers is skipped. */
+function toMap(text: string): Record<string, string[]> {
+  const map: Record<string, string[]> = {};
+  for (const line of text.split('\n')) {
+    const colon = line.indexOf(':');
+    if (colon < 1) continue;
+    const key = line.slice(0, colon).trim().toLowerCase();
+    const names = line.slice(colon + 1);
+    map[key.startsWith('.') ? key : `.${key}`] = names.split(',').map((n) => n.trim()).filter(Boolean);
+  }
+  return map;
 }
 
 function initialState(details: IndexerDetails): FormState {
@@ -52,6 +82,7 @@ function toSettings(state: FormState): RemoteIndexerSettings {
     const { set, value } = state[f.key];
     if (!set) { settings[f.key] = null; continue; }
     settings[f.key] = f.kind === 'lines' ? value.split('\n').map((l) => l.trim()).filter(Boolean)
+      : f.kind === 'map' ? toMap(value)
       : f.kind === 'number' ? Number(value)
       : f.kind === 'bool' ? value === 'true'
       : value;
@@ -84,7 +115,7 @@ function SettingRow({ field, state, error, onChange }: {
       </div>
       <div className="grid gap-1">
         <label htmlFor={id} className="sr-only">{field.label}</label>
-        {field.kind === 'lines' ? (
+        {field.kind === 'lines' || field.kind === 'map' ? (
           <textarea
             {...common}
             rows={Math.min(8, Math.max(3, state.value.split('\n').length))}
@@ -93,6 +124,15 @@ function SettingRow({ field, state, error, onChange }: {
             value={state.value}
             onChange={(e) => onChange({ ...state, value: e.target.value })}
           />
+        ) : field.kind === 'select' ? (
+          <select
+            {...common}
+            className="h-9 w-40 rounded-md border bg-transparent px-2 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-60"
+            value={field.choices?.includes(state.value) ? state.value : (field.choices?.[0] ?? '')}
+            onChange={(e) => onChange({ ...state, value: e.target.value })}
+          >
+            {field.choices?.map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
         ) : field.kind === 'bool' ? (
           <select
             {...common}
@@ -244,7 +284,7 @@ export function MachineSettings({ details, onSaved }: { details: IndexerDetails;
           <Heading>In effect</Heading>
           <InEffect config={status.config} />
           <p className="mt-2 text-xs text-muted-foreground">
-            As last reported. Passwords and the license key are never sent; settings that start programs or load data files can only be changed on the machine.
+            As last reported. Passwords are never sent; settings that start programs or load plugins or data files can only be changed on the machine.
           </p>
         </section>
       )}
