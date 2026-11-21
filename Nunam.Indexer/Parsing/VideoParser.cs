@@ -1,7 +1,8 @@
 using System.Globalization;
 using FFMpegCore;
 using Microsoft.Extensions.Options;
-using Nunam.Core.Entities;
+using Nunam.Core.Management;
+using Nunam.Indexer.Abstractions;
 
 namespace Nunam.Indexer.Parsing
 {
@@ -11,6 +12,8 @@ namespace Nunam.Indexer.Parsing
     /// </summary>
     public class VideoParser(IOptions<IndexerOptions> options, ILogger<VideoParser> logger) : IFileParser
     {
+        public string Name => IndexerProviders.Parsers.FFmpeg;
+
         private static readonly TimeSpan MaxFrameOffset = TimeSpan.FromSeconds(30);
 
         /// <summary>
@@ -21,10 +24,11 @@ namespace Nunam.Indexer.Parsing
             "-protocol_whitelist file -format_whitelist mov,matroska,webm,avi,asf,flv,mpeg,mpegts,mpegvideo,ogg";
         private readonly IndexerOptions _options = options.Value;
 
-        public bool CanParse(FileType fileType, string extension) => fileType == FileType.Video;
+        public bool CanParse(FileKind kind, string extension) => kind == FileKind.Video;
 
-        public async Task<ParseOutcome> ParseAsync(FileInfo file, FileType fileType, CancellationToken cancellationToken)
+        public async Task<ParseOutcome> ParseAsync(ParseRequest request, CancellationToken cancellationToken)
         {
+            var file = request.File;
             var ffOptions = new FFOptions { BinaryFolder = _options.FFmpegBinaryFolder ?? string.Empty };
 
             IMediaAnalysis analysis;
@@ -48,7 +52,7 @@ namespace Nunam.Indexer.Parsing
             return new ParseOutcome
             {
                 Content = string.Join('\n', new[] { title, comment }.Where(t => !string.IsNullOrWhiteSpace(t))),
-                Metadata = ParseMetadata.ToJson(
+                Metadata = ParseOutcome.MetadataOf(
                     ("durationSeconds", Math.Round(analysis.Duration.TotalSeconds, 1)),
                     ("width", video?.Width),
                     ("height", video?.Height),

@@ -1,4 +1,5 @@
-using Nunam.Core.Entities;
+using Nunam.Core.Management;
+using Nunam.Indexer.Abstractions;
 
 namespace Nunam.Indexer.Parsing
 {
@@ -9,9 +10,11 @@ namespace Nunam.Indexer.Parsing
     /// </summary>
     public class FallbackParser : IFileParser
     {
-        public bool CanParse(FileType fileType, string extension) => true;
+        public string Name => IndexerProviders.Parsers.Fallback;
 
-        public Task<ParseOutcome> ParseAsync(FileInfo file, FileType fileType, CancellationToken cancellationToken) =>
+        public bool CanParse(FileKind kind, string extension) => true;
+
+        public Task<ParseOutcome> ParseAsync(ParseRequest request, CancellationToken cancellationToken) =>
             Task.FromResult(ParseOutcome.Empty);
     }
 }

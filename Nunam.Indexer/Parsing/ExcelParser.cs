@@ -4,7 +4,8 @@ using System.Text;
 using ExcelDataReader;
 using ExcelDataReader.Exceptions;
 using Microsoft.Extensions.Options;
-using Nunam.Core.Entities;
+using Nunam.Core.Management;
+using Nunam.Indexer.Abstractions;
 using NumberFormat = ExcelNumberFormat.NumberFormat;
 
 namespace Nunam.Indexer.Parsing
@@ -15,6 +16,8 @@ namespace Nunam.Indexer.Parsing
     /// </summary>
     public class ExcelParser(IOptions<IndexerOptions> options, ILogger<ExcelParser> logger) : IFileParser
     {
+        public string Name => IndexerProviders.Parsers.ExcelDataReader;
+
         /// <summary>
         /// Cells visited, empty or not, before giving up on the rest of the file. A tiny file can declare a
         /// sheet of 17 billion cells, and the reader walks every row up to its last one.
@@ -30,10 +33,11 @@ namespace Nunam.Indexer.Parsing
 
         static ExcelParser() => Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
 
-        public bool CanParse(FileType fileType, string extension) => Extensions.Contains(extension);
+        public bool CanParse(FileKind kind, string extension) => Extensions.Contains(extension);
 
-        public Task<ParseOutcome> ParseAsync(FileInfo file, FileType fileType, CancellationToken cancellationToken)
+        public Task<ParseOutcome> ParseAsync(ParseRequest request, CancellationToken cancellationToken)
         {
+            var file = request.File;
             if (file.Length > _options.MaxFileSizeBytes)
             {
                 return Task.FromResult(ParseOutcome.Empty);
@@ -48,7 +52,7 @@ namespace Nunam.Indexer.Parsing
             catch (InvalidPasswordException)
             {
                 logger.LogInformation("Skipping content of encrypted workbook {Path}", file.FullName);
-                return Task.FromResult(new ParseOutcome { Metadata = ParseMetadata.ToJson(("encrypted", true)) });
+                return Task.FromResult(new ParseOutcome { Metadata = ParseOutcome.MetadataOf(("encrypted", true)) });
             }
 
             var text = new StringBuilder();
@@ -88,7 +92,7 @@ namespace Nunam.Indexer.Parsing
             return Task.FromResult(new ParseOutcome
             {
                 Content = text.ToString().Trim(),
-                Metadata = ParseMetadata.ToJson(("sheets", sheetNames)),
+                Metadata = ParseOutcome.MetadataOf(("sheets", sheetNames)),
             });
         }
 

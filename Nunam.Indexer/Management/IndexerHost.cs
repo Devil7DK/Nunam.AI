@@ -3,7 +3,9 @@ using Nunam.Core.Data;
 using Nunam.Core.Jobs;
 using Nunam.Core.Management;
 using Nunam.Indexer.Indexing;
+using Nunam.Indexer.Abstractions;
 using Nunam.Indexer.Parsing;
+using Nunam.Indexer.Providers;
 using Nunam.Indexer.Workers;
 
 namespace Nunam.Indexer.Management
@@ -48,13 +50,14 @@ namespace Nunam.Indexer.Management
             builder.Services.AddSingleton<FileTree>();
             builder.Services.AddSingleton<IndexScope>();
 
-            // Registration order matters: specialized parsers first, fallback last.
+            // Built-in parsers are offered in this order when no parser list is configured for an extension.
             builder.Services.AddSingleton<FileTypeDetector>();
-            builder.Services.AddSingleton<ParserSelector>();
-            builder.Services.AddSingleton<OcrService>();
+            builder.Services.AddSingleton<ProviderRegistry>();
             builder.Services.AddSingleton<IFileParser, TextParser>();
             builder.Services.AddSingleton<IFileParser, PdfParser>();
-            builder.Services.AddSingleton<IFileParser, WordParser>();
+            builder.Services.AddSingleton<IFileParser, Word97Parser>();
+            builder.Services.AddSingleton<IFileParser, OpenXmlWordParser>();
+            builder.Services.AddSingleton<IFileParser, RtfParser>();
             builder.Services.AddSingleton<IFileParser, ExcelParser>();
             builder.Services.AddSingleton<IFileParser, PowerPointParser>();
             builder.Services.AddSingleton<IFileParser, ImageParser>();

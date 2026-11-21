@@ -1,4 +1,6 @@
 using System.Runtime.InteropServices;
+using Nunam.Core.Management;
+using Nunam.Indexer.Abstractions;
 using SkiaSharp;
 
 namespace Nunam.Indexer.Parsing
@@ -7,7 +9,7 @@ namespace Nunam.Indexer.Parsing
     /// Renders PDF pages with PDFium (from the bblanchon.PDFium packages). PDFium is not thread-safe, so
     /// every call holds one process-wide lock.
     /// </summary>
-    public sealed partial class Pdfium : IDisposable
+    public sealed partial class Pdfium : IRenderedPdf
     {
         private static readonly Lock Gate = new();
         private static bool _initialized;
@@ -139,5 +141,13 @@ namespace Nunam.Indexer.Parsing
 
         [LibraryImport(Library)]
         private static partial void FPDF_RenderPageBitmap(IntPtr bitmap, IntPtr page, int startX, int startY, int sizeX, int sizeY, int rotate, int flags);
+    }
+
+    /// <summary>The built-in PDF renderer.</summary>
+    public sealed class PdfiumRenderer : IPdfRenderer
+    {
+        public string Name => IndexerProviders.PdfRenderers.Pdfium;
+        public bool IsAvailable => true;
+        public IRenderedPdf? Open(byte[] pdf) => Pdfium.Open(pdf);
     }
 }

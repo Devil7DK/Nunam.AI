@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Options;
-using Nunam.Core.Entities;
+using Nunam.Core.Management;
+using Nunam.Indexer.Abstractions;
 
 namespace Nunam.Indexer.Parsing
 {
@@ -9,6 +10,8 @@ namespace Nunam.Indexer.Parsing
     /// </summary>
     public class TextParser(IOptions<IndexerOptions> options, ILogger<TextParser> logger) : IFileParser
     {
+        public string Name => IndexerProviders.Parsers.Text;
+
         private readonly IndexerOptions _options = options.Value;
 
         private static readonly HashSet<string> TextExtensions = new(StringComparer.OrdinalIgnoreCase)
@@ -19,10 +22,11 @@ namespace Nunam.Indexer.Parsing
             ".ini", ".cfg", ".conf", ".toml",
         };
 
-        public bool CanParse(FileType fileType, string extension) => TextExtensions.Contains(extension);
+        public bool CanParse(FileKind kind, string extension) => TextExtensions.Contains(extension);
 
-        public async Task<ParseOutcome> ParseAsync(FileInfo file, FileType fileType, CancellationToken cancellationToken)
+        public async Task<ParseOutcome> ParseAsync(ParseRequest request, CancellationToken cancellationToken)
         {
+            var file = request.File;
             if (file.Length > _options.MaxFileSizeBytes)
             {
                 logger.LogDebug("Skipping content of oversized text file {Path} ({Size} bytes)", file.FullName, file.Length);

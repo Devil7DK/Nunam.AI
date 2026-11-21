@@ -1,7 +1,8 @@
 using MetadataExtractor;
 using MetadataExtractor.Formats.Exif;
 using Microsoft.Extensions.Options;
-using Nunam.Core.Entities;
+using Nunam.Core.Management;
+using Nunam.Indexer.Abstractions;
 
 namespace Nunam.Indexer.Parsing
 {
@@ -9,15 +10,18 @@ namespace Nunam.Indexer.Parsing
     /// Reads EXIF (camera, date taken, GPS), OCRs any text in the image, and stores a scaled-down
     /// preview for the vision model. Images above the preview size cap get EXIF only.
     /// </summary>
-    public class ImageParser(IOptions<IndexerOptions> options, OcrService ocr, ILogger<ImageParser> logger) : IFileParser
+    public class ImageParser(IOptions<IndexerOptions> options, ILogger<ImageParser> logger) : IFileParser
     {
+        public string Name => IndexerProviders.Parsers.Image;
+
         private const int OcrEdgePx = 3000;
         private readonly IndexerOptions _options = options.Value;
 
-        public bool CanParse(FileType fileType, string extension) => fileType == FileType.Image;
+        public bool CanParse(FileKind kind, string extension) => kind == FileKind.Image;
 
-        public async Task<ParseOutcome> ParseAsync(FileInfo file, FileType fileType, CancellationToken cancellationToken)
+        public async Task<ParseOutcome> ParseAsync(ParseRequest request, CancellationToken cancellationToken)
         {
+            var file = request.File;
             var exif = ReadExif(file);
 
             if (file.Length > _options.MaxPreviewBytes)
@@ -38,7 +42,7 @@ namespace Nunam.Indexer.Parsing
 
             return new ParseOutcome
             {
-                Content = await ReadTextAsync(bytes, file.FullName, cancellationToken),
+                Content = await ReadTextAsync(bytes, request.Ocr, cancellationToken),
                 Metadata = ToJson(exif, preview),
                 PreviewImage = preview?.Bytes,
                 NeedsDescribe = preview is not null,
@@ -46,15 +50,15 @@ namespace Nunam.Indexer.Parsing
         }
 
         /// <summary>
-        /// Tesseract gets an upright copy no larger than <see cref="OcrEdgePx"/>, which also covers formats
+        /// The OCR engine gets an upright copy no larger than <see cref="OcrEdgePx"/>, which also covers formats
         /// it can't decode itself.
         /// </summary>
-        private async Task<string?> ReadTextAsync(byte[] bytes, string path, CancellationToken cancellationToken)
+        private async Task<string?> ReadTextAsync(byte[] bytes, IOcrEngine ocr, CancellationToken cancellationToken)
         {
             if (!ocr.IsAvailable) return null;
 
             var image = PreviewImages.Create(bytes, OcrEdgePx, _options.MaxImagePixels);
-            return image is null ? null : await ocr.ReadImageAsync(image.Bytes, path, cancellationToken);
+            return image is null ? null : await ocr.ReadImageAsync(image.Bytes, cancellationToken);
         }
 
         private record Exif(string? Make, string? Model, DateTime? TakenAt, double? Latitude, double? Longitude);
@@ -86,7 +90,7 @@ namespace Nunam.Indexer.Parsing
             }
         }
 
-        private static string? ToJson(Exif? exif, PreviewImage? preview) => ParseMetadata.ToJson(
+        private static IReadOnlyDictionary<string, object?>? ToJson(Exif? exif, PreviewImage? preview) => ParseOutcome.MetadataOf(
             ("width", preview?.Width),
             ("height", preview?.Height),
             ("cameraMake", exif?.Make),

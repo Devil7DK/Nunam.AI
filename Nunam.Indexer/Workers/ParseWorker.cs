@@ -1,17 +1,20 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Nunam.Core.Data;
 using Nunam.Core.Entities;
 using Nunam.Core.Jobs;
+using Nunam.Indexer.Abstractions;
 using Nunam.Indexer.Indexing;
 using Nunam.Indexer.Management;
 using Nunam.Indexer.Parsing;
+using Nunam.Indexer.Providers;
 
 namespace Nunam.Indexer.Workers
 {
     /// <summary>
     /// Consumes this machine's <see cref="IndexJobKind.Parse"/> jobs: detects the file type, runs the
-    /// matching parser, upserts the <see cref="IndexedFile"/>, and enqueues the follow-up AI job when
+    /// parsers configured for it until one reads it, upserts the <see cref="IndexedFile"/>, and enqueues the follow-up AI job when
     /// its input changed — a Describe for a new preview image (the DescribeWorker enqueues the Embed
     /// after it), otherwise an Embed. Pending Embed/Describe jobs for the path are cleared first so a
     /// re-parse doesn't pile up duplicates.
@@ -50,7 +53,7 @@ namespace Nunam.Indexer.Workers
             var db = scope.ServiceProvider.GetRequiredService<NunamDbContext>();
             var queue = scope.ServiceProvider.GetRequiredService<JobQueue>();
             var detector = scope.ServiceProvider.GetRequiredService<FileTypeDetector>();
-            var selector = scope.ServiceProvider.GetRequiredService<ParserSelector>();
+            var providers = scope.ServiceProvider.GetRequiredService<ProviderRegistry>();
 
             var jobs = await queue.ClaimAsync(IndexJobKind.Parse, _options.ParseBatchSize, machine.MachineId, cancellationToken);
             if (jobs.Count == 0)
@@ -70,7 +73,7 @@ namespace Nunam.Indexer.Workers
                 deadline.CancelAfter(TimeSpan.FromSeconds(_options.ParseTimeoutSeconds));
                 try
                 {
-                    await ProcessAsync(db, queue, detector, selector, job, deadline.Token);
+                    await ProcessAsync(db, queue, detector, providers, job, deadline.Token);
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
@@ -94,7 +97,7 @@ namespace Nunam.Indexer.Workers
         }
 
         private async Task ProcessAsync(
-            NunamDbContext db, JobQueue queue, FileTypeDetector detector, ParserSelector selector,
+            NunamDbContext db, JobQueue queue, FileTypeDetector detector, ProviderRegistry providers,
             IndexJob job, CancellationToken cancellationToken)
         {
             job.Stage = IndexJobStage.Detect;
@@ -115,8 +118,7 @@ namespace Nunam.Indexer.Workers
             var fileType = detector.Detect(info);
 
             job.Stage = IndexJobStage.Parse;
-            var parser = selector.Select(fileType, info.Extension);
-            var outcome = await parser.ParseAsync(info, fileType, cancellationToken);
+            var (outcome, parserName) = await ParseAsync(providers, info, (FileKind)fileType, cancellationToken);
 
             job.Stage = IndexJobStage.Upsert;
             var file = await db.Files.FirstOrDefaultAsync(
@@ -139,7 +141,7 @@ namespace Nunam.Indexer.Workers
             file.FileModifiedAt = info.LastWriteTimeUtc;
             file.IndexedAt = DateTimeOffset.UtcNow;
             file.Content = content;
-            file.Metadata = outcome.Metadata;
+            file.Metadata = outcome.Metadata is { Count: > 0 } metadata ? JsonSerializer.Serialize(metadata) : null;
             file.PreviewImage = outcome.PreviewImage;
             if (!outcome.NeedsDescribe)
             {
@@ -155,8 +157,46 @@ namespace Nunam.Indexer.Workers
             job.Error = null;
 
             _logger.LogInformation(
-                "Parsed {Path} (type={Type}, content={ContentLen} chars, preview={HasPreview}, follow-up={FollowUp})",
-                job.Path, fileType, outcome.Content?.Length ?? 0, outcome.PreviewImage is not null, followUp?.ToString() ?? "none");
+                "Parsed {Path} with {Parser} (type={Type}, content={ContentLen} chars, preview={HasPreview}, follow-up={FollowUp})",
+                job.Path, parserName, fileType, outcome.Content?.Length ?? 0, outcome.PreviewImage is not null, followUp?.ToString() ?? "none");
+        }
+
+        /// <summary>
+        /// Tries each parser in the file's chain until one neither declines nor fails. When one failed and
+        /// only the name-only fallback was left, the file's job fails with that error instead, so a file a
+        /// parser broke on shows up as failed rather than as indexed without content.
+        /// </summary>
+        private async Task<(ParseOutcome Outcome, string Parser)> ParseAsync(
+            ProviderRegistry providers, FileInfo info, FileKind kind, CancellationToken cancellationToken)
+        {
+            var request = new ParseRequest(
+                info, kind,
+                new ParseLimits(_options.MaxFileSizeBytes, _options.MaxContentChars, _options.PreviewMaxEdgePx, _options.MaxImagePixels),
+                providers.Ocr, providers.PdfRenderer);
+
+            Exception? firstError = null;
+            foreach (var parser in providers.ChainFor(kind, info.Extension))
+            {
+                if (firstError is not null && parser.Name == Core.Management.IndexerProviders.Parsers.Fallback) break;
+                try
+                {
+                    var outcome = await parser.ParseAsync(request, cancellationToken);
+                    if (outcome.IsDeclined) continue;
+                    if (!providers.IsBuiltIn(parser) && outcome.PreviewImage is { } raw)
+                    {
+                        var preview = PreviewImages.Create(raw, _options.PreviewMaxEdgePx, _options.MaxImagePixels)?.Bytes;
+                        outcome = outcome with { PreviewImage = preview, NeedsDescribe = outcome.NeedsDescribe && preview is not null };
+                    }
+                    return (outcome, parser.Name);
+                }
+                catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+                {
+                    _logger.LogDebug(ex, "{Parser} could not read {Path}", parser.Name, info.FullName);
+                    firstError ??= ex;
+                }
+            }
+
+            throw firstError ?? new InvalidOperationException("No parser read the file.");
         }
 
         /// <summary>

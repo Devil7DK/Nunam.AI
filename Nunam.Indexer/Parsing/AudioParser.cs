@@ -1,4 +1,5 @@
-using Nunam.Core.Entities;
+using Nunam.Core.Management;
+using Nunam.Indexer.Abstractions;
 
 namespace Nunam.Indexer.Parsing
 {
@@ -8,10 +9,13 @@ namespace Nunam.Indexer.Parsing
     /// </summary>
     public class AudioParser(ILogger<AudioParser> logger) : IFileParser
     {
-        public bool CanParse(FileType fileType, string extension) => fileType == FileType.Audio;
+        public string Name => IndexerProviders.Parsers.TagLib;
 
-        public Task<ParseOutcome> ParseAsync(FileInfo file, FileType fileType, CancellationToken cancellationToken)
+        public bool CanParse(FileKind kind, string extension) => kind == FileKind.Audio;
+
+        public Task<ParseOutcome> ParseAsync(ParseRequest request, CancellationToken cancellationToken)
         {
+            var file = request.File;
             TagLib.File media;
             try
             {
@@ -37,7 +41,7 @@ namespace Nunam.Indexer.Parsing
                 return Task.FromResult(new ParseOutcome
                 {
                     Content = content,
-                    Metadata = ParseMetadata.ToJson(
+                    Metadata = ParseOutcome.MetadataOf(
                         ("title", tag.Title),
                         ("artists", artists.Length > 0 ? artists : null),
                         ("album", tag.Album),

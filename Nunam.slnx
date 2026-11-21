@@ -2,6 +2,7 @@
   <Project Path="Nunam.AIWorker/Nunam.AIWorker.csproj" Id="dfcc32d5-78fe-4ece-855e-cb82cfd0f881" />
   <Project Path="Nunam.API/Nunam.API.csproj" Id="be4a1aaa-07bb-41d5-a452-05150b2dbc80" />
   <Project Path="Nunam.Core/Nunam.Core.csproj" Id="644c5bdb-10f7-47b8-aad3-4333f0183c99" />
+  <Project Path="Nunam.Indexer.Abstractions/Nunam.Indexer.Abstractions.csproj" />
   <Project Path="Nunam.Indexer/Nunam.Indexer.csproj" Id="48e72ba2-119e-43d6-a1dd-a5dd65957ee1" />
   <Project Path="Nunam.WebUI/nunam.webui.esproj">
     <Build />

@@ -215,6 +215,9 @@ namespace Nunam.Indexer.Management
         {
             null => null,
             string[] items => string.Join('\n', items),
+            IDictionary<string, string[]> lists => string.Join('\n', lists.OrderBy(l => l.Key).Select(l => $"{l.Key}: {string.Join(", ", l.Value)}")),
+            IDictionary<string, CommandOptions> commands => string.Join('\n', commands.OrderBy(c => c.Key).Select(c =>
+                $"{c.Key}: {c.Value.Path} {string.Join(' ', c.Value.EffectiveArguments)} ({c.Value.Use}{(c.Value.Extensions.Length > 0 ? ", " + string.Join(' ', c.Value.Extensions) : "")})")),
             bool b => b ? "true" : "false",
             _ => Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture),
         };

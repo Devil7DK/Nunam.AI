@@ -76,6 +76,29 @@ namespace Nunam.Indexer
         /// <summary>Scanned PDFs are OCRed up to this many pages.</summary>
         public int OcrMaxPdfPages { get; set; } = 20;
 
+        /// <summary>
+        /// Extension (<c>.pdf</c>) to the parsers to try for it, in order; the first that doesn't decline or
+        /// fail wins. Names are built-in parsers, <c>command:&lt;name&gt;</c> for <see cref="Commands"/>, or a
+        /// plugin's name. Extensions not listed get every parser that offers itself, plugins and commands first.
+        /// </summary>
+        public Dictionary<string, string[]> Parsers { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary><c>tesseract</c>, <c>none</c>, <c>command:&lt;name&gt;</c> or a plugin's name.</summary>
+        public string OcrEngine { get; set; } = "tesseract";
+
+        /// <summary><c>pdfium</c>, <c>none</c> or a plugin's name.</summary>
+        public string PdfRenderer { get; set; } = "pdfium";
+
+        /// <summary>External programs usable as parsers (<c>command:&lt;name&gt;</c>) or as an OCR engine.</summary>
+        public Dictionary<string, CommandOptions> Commands { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// Folder of plugin assemblies, one subfolder per plugin; defaults to <c>plugins</c> next to the
+        /// indexer. A plugin runs inside the service with its access, so only administrators should be
+        /// able to write here.
+        /// </summary>
+        public string? PluginFolder { get; set; }
+
         /// <summary>Folder holding <c>ffmpeg</c>/<c>ffprobe</c>; when unset they're looked up on PATH.</summary>
         public string? FFmpegBinaryFolder { get; set; }
 
@@ -106,5 +129,32 @@ namespace Nunam.Indexer
         public long MaxFileSizeBytes => MaxFileSizeMb * 1024L * 1024L;
         public long MaxPreviewBytes => MaxPreviewMb * 1024L * 1024L;
         public long MaxImagePixels => MaxImageMegapixels * 1_000_000L;
+    }
+
+    /// <summary>An external program from <see cref="IndexerOptions.Commands"/>.</summary>
+    public class CommandOptions
+    {
+        /// <summary>Full path of the program.</summary>
+        public string Path { get; set; } = "";
+
+        /// <summary>
+        /// Arguments, each passed as is; none means just <c>{file}</c>. <c>{file}</c> becomes the file's full
+        /// path, <c>{lang}</c> the OCR languages. A parser's text is read from stdout.
+        /// </summary>
+        // Empty by default: the configuration binder appends configured items to an array's default.
+        public string[] Arguments { get; set; } = [];
+
+        public IEnumerable<string> EffectiveArguments => Arguments.Length == 0 ? ["{file}"] : Arguments;
+
+        /// <summary>Extensions this command offers to parse when no parser list is configured for them.</summary>
+        public string[] Extensions { get; set; } = [];
+
+        /// <summary><c>parser</c> (default) or <c>ocr</c>, which gets the image on stdin.</summary>
+        public string Use { get; set; } = "parser";
+
+        /// <summary>Send the file on stdin instead of (or as well as) naming it with <c>{file}</c>.</summary>
+        public bool Stdin { get; set; }
+
+        public int TimeoutSeconds { get; set; } = 120;
     }
 }
