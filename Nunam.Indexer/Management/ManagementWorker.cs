@@ -208,9 +208,6 @@ namespace Nunam.Indexer.Management
             entries.Add(new ConfigEntry("ConnectionStrings:Postgres",
                 $"Host={connection.Host};Port={connection.Port};Database={connection.Database};Username={connection.Username};SSL Mode={connection.SslMode}",
                 ConfigSource.Local));
-            entries.Add(new ConfigEntry("Syncfusion:LicenseKey",
-                string.IsNullOrWhiteSpace(configuration["Syncfusion:LicenseKey"]) ? "not set" : "set",
-                ConfigSource.Local));
             return entries;
         }
 

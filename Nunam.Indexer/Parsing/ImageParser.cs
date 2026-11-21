@@ -11,6 +11,7 @@ namespace Nunam.Indexer.Parsing
     /// </summary>
     public class ImageParser(IOptions<IndexerOptions> options, OcrService ocr, ILogger<ImageParser> logger) : IFileParser
     {
+        private const int OcrEdgePx = 3000;
         private readonly IndexerOptions _options = options.Value;
 
         public bool CanParse(FileType fileType, string extension) => fileType == FileType.Image;
@@ -37,11 +38,23 @@ namespace Nunam.Indexer.Parsing
 
             return new ParseOutcome
             {
-                Content = ocr.ReadImage(bytes, file.FullName),
+                Content = await ReadTextAsync(bytes, file.FullName, cancellationToken),
                 Metadata = ToJson(exif, preview),
                 PreviewImage = preview?.Bytes,
                 NeedsDescribe = preview is not null,
             };
+        }
+
+        /// <summary>
+        /// Tesseract gets an upright copy no larger than <see cref="OcrEdgePx"/>, which also covers formats
+        /// it can't decode itself.
+        /// </summary>
+        private async Task<string?> ReadTextAsync(byte[] bytes, string path, CancellationToken cancellationToken)
+        {
+            if (!ocr.IsAvailable) return null;
+
+            var image = PreviewImages.Create(bytes, OcrEdgePx, _options.MaxImagePixels);
+            return image is null ? null : await ocr.ReadImageAsync(image.Bytes, path, cancellationToken);
         }
 
         private record Exif(string? Make, string? Model, DateTime? TakenAt, double? Latitude, double? Longitude);

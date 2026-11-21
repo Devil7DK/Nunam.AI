@@ -1,13 +1,13 @@
 using System.Text;
+using DocumentFormat.OpenXml.Packaging;
 using Microsoft.Extensions.Options;
 using Nunam.Core.Entities;
-using Syncfusion.Presentation;
 
 namespace Nunam.Indexer.Parsing
 {
     /// <summary>
-    /// Extracts slide text — shapes, groups, tables and speaker notes — from .pptx-family files.
-    /// Legacy binary .ppt is not supported by Syncfusion.Presentation and falls through to the fallback parser.
+    /// Extracts slide text (shapes, groups, tables) and speaker notes, in slide order, from .pptx-family
+    /// files. Legacy binary .ppt falls through to the fallback parser.
     /// </summary>
     public class PowerPointParser(IOptions<IndexerOptions> options) : IFileParser
     {
@@ -25,53 +25,29 @@ namespace Nunam.Indexer.Parsing
                 return Task.FromResult(ParseOutcome.Empty);
             }
 
-            using var stream = file.OpenRead();
-            using var presentation = Presentation.Open(stream);
+            using var presentation = PresentationDocument.Open(file.FullName, false, OfficeText.Settings);
+            var main = presentation.PresentationPart;
+            var slideIds = main?.Presentation?.SlideIdList?.Elements<DocumentFormat.OpenXml.Presentation.SlideId>().ToList() ?? [];
 
             var text = new StringBuilder();
-            foreach (ISlide slide in presentation.Slides)
+            foreach (var slideId in slideIds)
             {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                AppendShapes(text, slide.Shapes);
-                if (slide.NotesSlide?.NotesTextBody?.Text is { Length: > 0 } notes)
-                {
-                    text.AppendLine(notes);
-                }
-
                 if (text.Length >= _options.MaxContentChars) break;
+                if (slideId.RelationshipId?.Value is not { } id || main!.GetPartById(id) is not SlidePart slide) continue;
+
+                OfficeText.Append(text, slide, _options.MaxContentChars, cancellationToken);
+                if (slide.NotesSlidePart is { } notes)
+                {
+                    OfficeText.Append(text, notes, _options.MaxContentChars, cancellationToken);
+                }
             }
 
+            var (title, author, _) = OfficeText.CoreProperties(presentation);
             return Task.FromResult(new ParseOutcome
             {
-                Content = text.ToString(),
-                Metadata = ParseMetadata.ToJson(
-                    ("slides", presentation.Slides.Count),
-                    ("title", presentation.BuiltInDocumentProperties.Title),
-                    ("author", presentation.BuiltInDocumentProperties.Author)),
+                Content = text.ToString().Trim(),
+                Metadata = ParseMetadata.ToJson(("slides", slideIds.Count), ("title", title), ("author", author)),
             });
-        }
-
-        private static void AppendShapes(StringBuilder text, IShapes shapes)
-        {
-            foreach (ISlideItem item in shapes)
-            {
-                switch (item)
-                {
-                    case IGroupShape group:
-                        AppendShapes(text, group.Shapes);
-                        break;
-                    case ITable table:
-                        foreach (IRow row in table.Rows)
-                        {
-                            text.AppendLine(string.Join('\t', row.Cells.Select(c => c.TextBody?.Text)));
-                        }
-                        break;
-                    case IShape shape when shape.TextBody?.Text is { Length: > 0 } body:
-                        text.AppendLine(body);
-                        break;
-                }
-            }
         }
     }
 }

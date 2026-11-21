@@ -9,7 +9,7 @@ var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings
     ContentRootPath = AppContext.BaseDirectory,
 });
 
-// Per-machine settings and secrets (watch paths, DB password, Syncfusion key) for installs that
+// Per-machine settings and secrets (watch paths, DB password) for installs that
 // don't run in Development, where user-secrets aren't read. Environment variables still win.
 builder.Configuration
     .AddJsonFile(Path.Combine(builder.Environment.ContentRootPath, "appsettings.Local.json"), optional: true)
@@ -27,18 +27,4 @@ builder.Services.AddSingleton(_ => NpgsqlDataSource.Create(builder.Configuration
 builder.Services.AddHostedService<DatabaseLogShipper>();
 builder.Services.AddHostedService<IndexerSupervisor>();
 
-var host = builder.Build();
-
-// Unlicensed, Syncfusion still parses but stamps evaluation notices into its output.
-var syncfusionKey = builder.Configuration["Syncfusion:LicenseKey"];
-if (string.IsNullOrWhiteSpace(syncfusionKey))
-{
-    host.Services.GetRequiredService<ILogger<Program>>()
-        .LogWarning("Syncfusion:LicenseKey is not set; document parsing runs unlicensed");
-}
-else
-{
-    Syncfusion.Licensing.SyncfusionLicenseProvider.RegisterLicense(syncfusionKey);
-}
-
-host.Run();
+builder.Build().Run();

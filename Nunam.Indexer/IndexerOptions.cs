@@ -59,12 +59,18 @@ namespace Nunam.Indexer
         public bool EnableOcr { get; set; } = true;
 
         /// <summary>
-        /// Tesseract language code(s), e.g. <c>eng</c> or <c>eng+tam</c>. Each needs a
-        /// <c>.traineddata</c> file in the tessdata folder; only <c>eng</c> ships with Syncfusion.
+        /// Tesseract language code(s), e.g. <c>eng</c> or <c>eng+tam</c>. Each needs its
+        /// <c>.traineddata</c> file in Tesseract's tessdata folder.
         /// </summary>
         public string OcrLanguage { get; set; } = "eng";
 
-        /// <summary>Tessdata folder; defaults to the one Syncfusion copies next to the binaries.</summary>
+        /// <summary>
+        /// The <c>tesseract</c> executable; when unset it's looked up on PATH, and on Windows also in
+        /// <c>Program Files\Tesseract-OCR</c>.
+        /// </summary>
+        public string? OcrTesseractPath { get; set; }
+
+        /// <summary>Tessdata folder, when not the one Tesseract was installed with.</summary>
         public string? OcrTessDataPath { get; set; }
 
         /// <summary>Scanned PDFs are OCRed up to this many pages.</summary>

@@ -1,17 +1,34 @@
+using System.Collections.Concurrent;
+using System.Globalization;
 using System.Text;
+using ExcelDataReader;
+using ExcelDataReader.Exceptions;
 using Microsoft.Extensions.Options;
 using Nunam.Core.Entities;
-using Syncfusion.XlsIO;
+using NumberFormat = ExcelNumberFormat.NumberFormat;
 
 namespace Nunam.Indexer.Parsing
 {
-    /// <summary>Extracts each worksheet's name and the displayed text of its used cells, one row per line.</summary>
-    public class ExcelParser(IOptions<IndexerOptions> options) : IFileParser
+    /// <summary>
+    /// Extracts each worksheet's name and the displayed text of its cells, one row per line. Reads as a
+    /// stream (.xls and .xlsx alike), so a huge sheet costs time rather than memory.
+    /// </summary>
+    public class ExcelParser(IOptions<IndexerOptions> options, ILogger<ExcelParser> logger) : IFileParser
     {
+        /// <summary>
+        /// Cells visited, empty or not, before giving up on the rest of the file. A tiny file can declare a
+        /// sheet of 17 billion cells, and the reader walks every row up to its last one.
+        /// </summary>
+        private const long MaxCellsVisited = 20_000_000;
+
         private static readonly HashSet<string> Extensions = new(StringComparer.OrdinalIgnoreCase)
         { ".xls", ".xlsx", ".xlsm", ".xltx", ".xltm" };
 
+        private static readonly ConcurrentDictionary<string, NumberFormat> Formats = new();
+
         private readonly IndexerOptions _options = options.Value;
+
+        static ExcelParser() => Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
 
         public bool CanParse(FileType fileType, string extension) => Extensions.Contains(extension);
 
@@ -23,52 +40,88 @@ namespace Nunam.Indexer.Parsing
             }
 
             using var stream = file.OpenRead();
-            using var engine = new ExcelEngine();
-            var workbook = engine.Excel.Workbooks.Open(stream);
+            IExcelDataReader reader;
+            try
+            {
+                reader = ExcelReaderFactory.CreateReader(stream);
+            }
+            catch (InvalidPasswordException)
+            {
+                logger.LogInformation("Skipping content of encrypted workbook {Path}", file.FullName);
+                return Task.FromResult(new ParseOutcome { Metadata = ParseMetadata.ToJson(("encrypted", true)) });
+            }
 
             var text = new StringBuilder();
             var sheetNames = new List<string>();
+            long visited = 0;
 
-            foreach (IWorksheet sheet in workbook.Worksheets)
+            using (reader)
             {
-                sheetNames.Add(sheet.Name);
-                text.AppendLine(sheet.Name);
-
-                // Populated cells only: UsedRange spans the bounding box, which two far-apart cells in a
-                // tiny file can stretch to billions of empty cells.
-                var row = -1;
-                foreach (var cell in sheet.UsedCells)
+                do
                 {
-                    cancellationToken.ThrowIfCancellationRequested();
+                    sheetNames.Add(reader.Name);
+                    text.AppendLine(reader.Name);
 
-                    var value = cell.DisplayText;
-                    if (string.IsNullOrWhiteSpace(value)) continue;
-
-                    if (cell.Row != row)
+                    while (text.Length < _options.MaxContentChars && visited < MaxCellsVisited && reader.Read())
                     {
-                        if (row != -1) text.AppendLine();
-                        row = cell.Row;
-                    }
-                    else
-                    {
-                        text.Append('\t');
-                    }
-                    text.Append(value);
+                        cancellationToken.ThrowIfCancellationRequested();
+                        visited += Math.Max(1, reader.FieldCount);
 
-                    if (text.Length >= _options.MaxContentChars) break;
+                        var line = 0;
+                        for (var i = 0; i < reader.FieldCount; i++)
+                        {
+                            if (Display(reader, i) is not { } value) continue;
+                            if (line++ > 0) text.Append('\t');
+                            text.Append(value);
+                        }
+                        if (line > 0) text.AppendLine();
+                    }
                 }
-                if (row != -1) text.AppendLine();
-
-                if (text.Length >= _options.MaxContentChars) break;
+                while (text.Length < _options.MaxContentChars && visited < MaxCellsVisited && reader.NextResult());
             }
 
-            workbook.Close();
+            if (visited >= MaxCellsVisited)
+            {
+                logger.LogInformation("Stopped reading {Path} after {Cells} cells", file.FullName, visited);
+            }
 
             return Task.FromResult(new ParseOutcome
             {
-                Content = text.ToString(),
+                Content = text.ToString().Trim(),
                 Metadata = ParseMetadata.ToJson(("sheets", sheetNames)),
             });
+        }
+
+        /// <summary>The cell as Excel shows it: numbers and dates through the cell's number format.</summary>
+        private static string? Display(IExcelDataReader reader, int column)
+        {
+            var value = reader.GetValue(column);
+            switch (value)
+            {
+                case null:
+                    return null;
+                case string s:
+                    return string.IsNullOrWhiteSpace(s) ? null : s.Trim();
+                case bool b:
+                    return b ? "TRUE" : "FALSE";
+            }
+
+            var formatString = reader.GetNumberFormatString(column);
+            if (!string.IsNullOrEmpty(formatString))
+            {
+                var format = Formats.GetOrAdd(formatString, f => new NumberFormat(f));
+                if (format.IsValid)
+                {
+                    try
+                    {
+                        return format.Format(value, CultureInfo.InvariantCulture);
+                    }
+                    catch (Exception ex) when (ex is FormatException or InvalidCastException or ArgumentException)
+                    {
+                    }
+                }
+            }
+            return Convert.ToString(value, CultureInfo.InvariantCulture);
         }
     }
 }
