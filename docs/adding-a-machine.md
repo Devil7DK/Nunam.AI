@@ -24,6 +24,7 @@ Everything machine-specific goes in `appsettings.Local.json` next to the executa
 | `Indexer:MachineName` | Name shown in the UI; defaults to the hostname. The machine is identified by hostname, so renaming here keeps its files. |
 | `Indexer:ExcludePatterns` | Defaults skip `.git`, `node_modules`, `bin`, `obj` and similar. Use `/` as the separator on every OS. Patterns match only below the watch path, so a watch path that is itself a `bin` folder is still indexed. |
 | `Indexer:SkipSystemFolders` | `true` by default: inside a watch path, skip the operating system and installed programs (on Linux `/usr`, `/etc`, `/var`, `/opt`, `/proc` and the like; on Windows `Windows`, `Program Files`, `ProgramData`, the recycle bin, the page file), app data in home folders (hidden folders such as `~/.config` and `~/.local`, and `AppData` on Windows), and package caches (`.cache`, `.nuget/packages`, `.venv`). A watch path inside one of those, such as `/opt/wiki`, is still indexed. |
+| `Indexer:RemoteManagement` | `false` by default. `true` lets admins and the machine's owners change some settings and restart, pause or resume the indexer from the **Machines** page. Only this file can turn it on. |
 | `Indexer:FFmpegBinaryFolder` | Only if ffmpeg isn't on `PATH`. |
 | `Indexer:OcrLanguage` | `eng` by default. For more, put the `.traineddata` files (e.g. `tam`) together with `eng.traineddata` in a folder, set `Indexer:OcrTessDataPath` to it, and use `eng+tam`. |
 
@@ -77,6 +78,21 @@ Installing a newer package keeps the settings and restarts the service. The serv
 On start the indexer registers the machine, scans every watch path and queues each new or changed file; files deleted while it was off, and files a removed watch path or a new exclude pattern no longer covers, are dropped. A watch path that is missing at start (an unplugged drive) keeps its entries. After that it follows changes as they happen. Files become keyword-searchable as soon as they're parsed, and searchable by meaning once the AI worker has embedded them — the status line in the UI shows how far it has got.
 
 Only admins see the new machine at first. To let others search it, open *Index status* in the UI and use *Share* on its row; make the machine's main user an owner so they can share it themselves.
+
+## Managing it from the web UI
+
+**Machines** in the UI's header lists every machine you can see. Each indexer reports to the database every 30 seconds, and sends its log entries every few seconds. A machine that hasn't reported for 90 seconds shows as offline. Everyone who can see a machine sees whether it's online, its watch paths and its job queue. Admins and the machine's owners also see its logs (kept 7 days) and the settings in effect, with where each value came from. Passwords and the license key are never sent.
+
+With `Indexer:RemoteManagement` on, admins and owners can also do these from the same page:
+
+- **Pause and resume parsing.** Changes are still queued while paused. Restarting the service resumes.
+- **Restart and rescan.** Only the workers restart, so the Windows or systemd service keeps running.
+- **Retry failed files.**
+- **Change settings:** machine name, watch paths, exclude patterns, skipping system folders, size limits and OCR. A changed setting overrides the machine's own value until it's cleared, and saving restarts the indexer.
+
+Settings that run programs or load data files (ffmpeg, tessdata, the connection string) can only be changed on the machine. On Windows, a new watch path also needs *Configure Nunam Indexer* run on the machine, so the service account may read it.
+
+All of this goes through the database: the indexer opens no port.
 
 ## Removing a machine
 

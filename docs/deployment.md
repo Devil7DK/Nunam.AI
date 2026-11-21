@@ -45,6 +45,8 @@ Enter it with a user name and password to create the first admin. From then on s
 
 **Adding people:** account menu → *People* → *Add a person*. Nunam generates a temporary password to hand over; the person picks their own at first sign-in. Admins can also reset passwords (which signs the person out everywhere), disable accounts, and make others admin.
 
+**Machines page:** *Machines* in the header shows each indexer's status, and to admins and owners its logs and settings ([managing it from the web UI](adding-a-machine.md#managing-it-from-the-web-ui)).
+
 **Who sees what:** admins see every machine. Everyone else sees only machines shared with them. A newly indexed machine is visible to admins only until someone shares it: *Index status* → *Share* on the machine's row. Owners of a machine can share it further; members can only search it.
 
 **Sessions** last 14 days without use and 90 days at most (`Auth:SessionIdleDays`, `Auth:SessionMaxDays`). Each person can see their signed-in devices and sign them out from the account menu. Five wrong passwords lock an account for 15 minutes, and each address gets 10 attempts a minute.
