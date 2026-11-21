@@ -22,14 +22,11 @@
     </Directory>
 
     <DirectoryRef Id="INSTALLDIR">
-      <!-- The service has to be in the component that installs its executable. Stopped, not started:
-           until appsettings.Local.json is filled in it could only fail. -->
+      <!-- Configure-Indexer.ps1 -Register creates the service: ServiceInstall would delete and recreate it
+           on every upgrade, losing the password of a user account it runs as. -->
       <Component Id="Service" Guid="5E1B6F0A-2C1D-4B57-9E07-3F1C8A0D6B21" Win64="yes">
         <File Id="ServiceExe" Name="Nunam.Indexer.exe" Source="$(var.SourceDir)/Nunam.Indexer.exe" KeyPath="yes" />
-        <ServiceInstall Id="ServiceInstall" Name="Nunam.Indexer" DisplayName="Nunam Indexer"
-                        Description="Indexes local files into the Nunam search index." Type="ownProcess"
-                        Start="auto" ErrorControl="normal" Account="NT SERVICE\Nunam.Indexer" />
-        <ServiceControl Id="ServiceControl" Name="Nunam.Indexer" Stop="both" Remove="uninstall" Wait="yes" />
+        <ServiceControl Id="ServiceControl" Name="Nunam.Indexer" Stop="both" Wait="yes" />
       </Component>
       <Component Id="Configure" Guid="9C4D2E7B-61A8-4F0C-B3D5-7A2E9F14C6D8" Win64="yes">
         <File Id="ConfigureScript" Name="Configure-Indexer.ps1" Source="$(var.ScriptDir)/Configure-Indexer.ps1" KeyPath="yes" />
@@ -48,14 +45,23 @@
       </Component>
     </DirectoryRef>
 
-    <!-- An upgrade reinstalls the service with the settings above; the script puts back delayed start,
-         restart on failure and the grants, and starts it again when the settings are filled in. -->
+    <!-- After an install or upgrade the script puts back delayed start, restart on failure and the grants,
+         and starts the service again when the settings are filled in. -->
     <CustomAction Id="FindPowerShell" Property="POWERSHELL" Value="[System64Folder]WindowsPowerShell\v1.0\powershell.exe" />
+    <CustomAction Id="FindSc" Property="SCEXE" Value="[System64Folder]sc.exe" />
+    <CustomAction Id="Register" Property="POWERSHELL" Execute="deferred" Impersonate="no" Return="check"
+                  ExeCommand="-NoProfile -ExecutionPolicy Bypass -File &quot;[INSTALLDIR]Configure-Indexer.ps1&quot; -Register" />
     <CustomAction Id="Reconfigure" Property="POWERSHELL" Execute="deferred" Impersonate="no" Return="ignore"
                   ExeCommand="-NoProfile -ExecutionPolicy Bypass -File &quot;[INSTALLDIR]Configure-Indexer.ps1&quot; -Unattended" />
+    <CustomAction Id="Unregister" Property="SCEXE" Execute="deferred" Impersonate="no" Return="ignore"
+                  ExeCommand="delete Nunam.Indexer" />
     <InstallExecuteSequence>
       <Custom Action="FindPowerShell" Before="InstallInitialize">NOT REMOVE</Custom>
+      <Custom Action="FindSc" Before="InstallInitialize">REMOVE~="ALL" AND NOT UPGRADINGPRODUCTCODE</Custom>
+      <Custom Action="Register" After="InstallFiles">NOT REMOVE</Custom>
       <Custom Action="Reconfigure" After="StartServices">NOT REMOVE</Custom>
+      <!-- Not when a newer version replaces this one: the service, and its account, carry over. -->
+      <Custom Action="Unregister" After="StopServices">REMOVE~="ALL" AND NOT UPGRADINGPRODUCTCODE</Custom>
     </InstallExecuteSequence>
 
     <Feature Id="Main" Level="1">
