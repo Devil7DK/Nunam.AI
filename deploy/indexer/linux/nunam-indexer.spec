@@ -3,14 +3,14 @@ Name:           nunam-indexer
 Version:        %{pkg_version}
 Release:        1
 Summary:        Indexes local files into the Nunam search index
-License:        Proprietary
+License:        AGPL-3.0-or-later
 BuildArch:      x86_64
 
-# Automatic dependencies would demand every native library Syncfusion ships for both Tesseract builds,
-# including the one this distribution doesn't have; the ones that matter are listed instead.
+# Automatic dependencies would come from every native library the self-contained .NET runtime ships;
+# the ones that matter are listed instead.
 AutoReqProv:    no
 Requires:       glibc libgcc libstdc++ openssl-libs libicu zlib systemd
-Recommends:     leptonica /usr/bin/ffmpeg acl
+Recommends:     tesseract tesseract-langpack-eng /usr/bin/ffmpeg acl
 
 %global debug_package %{nil}
 %global source_date_epoch_from_changelog 0

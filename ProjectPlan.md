@@ -71,7 +71,7 @@ Nunam indexes all files across multiple machines on the same local network (desk
 | Layer | Technology | Notes |
 |---|---|---|
 | Indexer | .NET 10 Worker Service | Runs on each machine |
-| Document Parsing | Syncfusion Essential Studio | PDF, DOCX, XLSX, PPTX, OCR |
+| Document Parsing | PdfPig, PDFium, Open XML SDK, ExcelDataReader, OpenMcdf; Tesseract (CLI) for OCR | PDF, DOC/DOCX/RTF, XLS/XLSX, PPTX, OCR. Syncfusion until Phase 10 |
 | Image metadata | MetadataExtractor (NuGet) | EXIF, IPTC, XMP |
 | Audio metadata | TagLibSharp (NuGet) | MP3, FLAC, AAC, etc. |
 | Video metadata | FFMpegCore (NuGet) | Duration, codec, resolution |
@@ -125,11 +125,11 @@ Nunam.slnx
 │   │   └── WatcherWorker.cs         # FileSystemWatcher wrapper
 │   ├── Parsers/
 │   │   ├── IFileParser.cs
-│   │   ├── PdfParser.cs             # Syncfusion.PDF
-│   │   ├── WordParser.cs            # Syncfusion.DocIO
-│   │   ├── ExcelParser.cs           # Syncfusion.XlsIO
-│   │   ├── PowerPointParser.cs      # Syncfusion.Presentation
-│   │   ├── ImageParser.cs           # MetadataExtractor + Syncfusion OCR
+│   │   ├── PdfParser.cs             # PdfPig + PDFium (Pdfium.cs)
+│   │   ├── WordParser.cs            # Open XML SDK, Word97.cs, RtfText.cs
+│   │   ├── ExcelParser.cs           # ExcelDataReader + ExcelNumberFormat
+│   │   ├── PowerPointParser.cs      # Open XML SDK
+│   │   ├── ImageParser.cs           # MetadataExtractor + Tesseract (OcrService)
 │   │   ├── AudioParser.cs           # TagLibSharp
 │   │   ├── VideoParser.cs           # FFMpegCore
 │   │   └── FallbackParser.cs        # Render to image → LLaVA
@@ -453,10 +453,10 @@ INSERT IndexJob(Kind=Parse, Status=Pending)             ← producer enqueues on
 ParseWorker (on the indexed machine)
     ├─ Detect MIME via MimeDetective (magic bytes → extension fallback)
     ├─ Route to parser by MIME:
-    │      application/pdf                       → PdfParser           (Syncfusion)
-    │      application/vnd.openxmlformats.word   → WordParser          (Syncfusion)
-    │      application/vnd.openxmlformats.sheet  → ExcelParser         (Syncfusion)
-    │      application/vnd.openxmlformats.pres   → PowerPointParser    (Syncfusion)
+    │      application/pdf                       → PdfParser
+    │      application/vnd.openxmlformats.word   → WordParser
+    │      application/vnd.openxmlformats.sheet  → ExcelParser
+    │      application/vnd.openxmlformats.pres   → PowerPointParser
     │      image/*                               → ImageParser         (MetadataExtractor + OCR)
     │      audio/*                               → AudioParser         (TagLibSharp)
     │      video/*                               → VideoParser         (FFMpegCore)
@@ -698,13 +698,13 @@ Database logins are created by `docker/postgres/10-roles.sh` on first start of t
 ### Phase 2 — Parse Worker (`Nunam.Indexer`, runs per machine)
 - [x] Implement `ParseWorker` (polls `IndexJob WHERE Kind=Parse AND Status=Pending` for **this machine only**, claims via `FOR UPDATE SKIP LOCKED`)
 - [x] Implement `ScanWorker` (startup crawl; skips files unchanged by size + mtime) and `WatcherWorker` (FileSystemWatcher, 2 s debounce → INSERT `IndexJob(Kind=Parse)`); `MachineInitializer` upserts this host's `Machine` row; `PathFilter` exclude patterns use `/` and match on Windows + Linux
-- [x] Implement `PdfParser` using Syncfusion.PDF — text of every page + page count/title/author; under 50 chars of text means a scan, so page 1 is rendered to PNG (`Syncfusion.PdfToImageConverter.Net`, PDFium) and queued for Describe; password-protected PDFs get `{"encrypted": true}` metadata and no content
-- [x] Implement `WordParser` using Syncfusion.DocIO — `.doc/.docx/.docm/.dot/.dotx/.dotm/.rtf`, text + title/author/subject/word count
-- [x] Implement `ExcelParser` using Syncfusion.XlsIO — `.xls/.xlsx/.xlsm/.xltx/.xltm`, sheet names + displayed cell text, one row per line
-- [x] Implement `PowerPointParser` using Syncfusion.Presentation — `.pptx` family only (Syncfusion can't open binary `.ppt`; it falls back to filename-only), shape/group/table text + speaker notes
+- [x] Implement `PdfParser` using Syncfusion.PDF — text of every page + page count/title/author; under 50 chars of text means a scan, so page 1 is rendered to PNG (`Syncfusion.PdfToImageConverter.Net`, PDFium) and queued for Describe; password-protected PDFs get `{"encrypted": true}` metadata and no content *(Syncfusion replaced in Phase 10)*
+- [x] Implement `WordParser` using Syncfusion.DocIO — `.doc/.docx/.docm/.dot/.dotx/.dotm/.rtf`, text + title/author/subject/word count *(Syncfusion replaced in Phase 10)*
+- [x] Implement `ExcelParser` using Syncfusion.XlsIO — `.xls/.xlsx/.xlsm/.xltx/.xltm`, sheet names + displayed cell text, one row per line *(Syncfusion replaced in Phase 10)*
+- [x] Implement `PowerPointParser` using Syncfusion.Presentation — `.pptx` family only (Syncfusion can't open binary `.ppt`; it falls back to filename-only), shape/group/table text + speaker notes *(Syncfusion replaced in Phase 10)*
 - [x] Cap stored content at `MaxContentChars` (500 000) — the FTS trigger's `to_tsvector` fails above 1 MB — and strip NULs centrally in `ParseWorker`
-- [x] Register the Syncfusion license at Indexer startup from `Syncfusion:LicenseKey` (see §14)
-- [x] Implement `ImageParser` (EXIF via MetadataExtractor + OCR via Syncfusion.OCR) — camera make/model, date taken, GPS, pixel size into metadata; OCR text (kept only when it has ≥ 3 real words, so photos don't fill `content` with noise) into content; preview scaled to `PreviewMaxEdgePx` (1568) with EXIF rotation applied, JPEG unless transparent. Over `MaxPreviewMb`: EXIF only
+- [x] Register the Syncfusion license at Indexer startup from `Syncfusion:LicenseKey` — removed with Syncfusion in Phase 10
+- [x] Implement `ImageParser` (EXIF via MetadataExtractor + OCR via Syncfusion.OCR) — camera make/model, date taken, GPS, pixel size into metadata; OCR text (kept only when it has ≥ 3 real words, so photos don't fill `content` with noise) into content; preview scaled to `PreviewMaxEdgePx` (1568) with EXIF rotation applied, JPEG unless transparent. Over `MaxPreviewMb`: EXIF only *(Syncfusion replaced in Phase 10)*
 - [x] OCR scanned PDFs — `PdfParser` adds a text layer to the first `OcrMaxPdfPages` (20) pages of a PDF with no text, then extracts it; the rendered first page still goes to Describe
 - [x] Implement `TextParser` — plain text / source / markup read as UTF-8 content (NULs stripped)
 - [x] Implement `AudioParser` using TagLibSharp — title/artists/album/genre/comment/lyrics as content (so songs are found by name), plus year, track, duration, bitrate, sample rate, channels
@@ -791,6 +791,10 @@ From the first full security audit (2026-11-20; report kept outside the repo). S
 - [x] UI — *Machines* page (`/machines/<id>`): machine list with online/paused/offline, files, queued and failed; detail with Overview, Settings (override form plus the settings in effect), Logs (level filter, paging) and Activity (command history); Share from there. Checked in headless Firefox as admin and as an owner; pause, resume and a settings change worked end to end, and the Windows VM (0.2.0 MSI) restarted in place from the page
 - Indexer version 0.2.0: older indexers don't report and show as *never reported*
 
+### Phase 10 — Open-source document parsing
+- [x] Replace Syncfusion — PDF text and metadata with PdfPig; scanned-PDF preview and OCR pages rendered with PDFium; .docx/.dotx/.docm/.dotm and .pptx family streamed with the Open XML SDK (`OpenXmlReader`, no DOM, parts capped at 200 M characters); .xls/.xlsx with ExcelDataReader, numbers and dates shown through ExcelNumberFormat, stopping after 20 M cells visited; binary .doc from its piece table; .rtf with a tokenizer; OCR through the `tesseract` program. Encrypted PDFs, .docx and workbooks get `{"encrypted": true}`. Indexer version 0.3.0. Checked against a throwaway database with 18 files (Word in four formats with Tamil text, a table and a link; .xls/.xlsx; .pptx; text, scanned and encrypted PDFs; photos; the 16000×16000 PNG, 7200 pt PDF and A1:XFD1048576 workbook bombs, each under a second, 260 MB peak): from the dev build, the Debian 13/12 and Fedora 44 packages with the distro Tesseract, and the 0.3.0 MSI upgraded over 0.2.0 on the Windows VM (without Tesseract: everything but OCR, with a warning). OCR text of scans is now plain lines instead of one word per line. Packages shrank: MSI 147 → 80 MB. `scanned-receipt.pdf` still reads as nothing, as it did with Syncfusion
+- [ ] OCR on Windows checked with Tesseract installed
+
 ### Rollout — after features, testing and review are done
 - [x] Deploy the server — its own LXC (`nunam`, 192.168.7.118, Debian 13, 4 vCPU, 8 GB, 32 GB) rather than the shared docker-host, so the index and its LAN-facing Postgres sit apart from the other apps. Laid out like the other app LXCs: `deploy/server/` (`compose.yaml` on registry images, `.env.example`, runbook) copied to `/srv/docker` with `.env` at 0600 and the folder in a local git repo. Images `registry.dineshkumar.dev/nunam/nunam-{migrations,api,ui,aiworker}` tagged `latest` and `<date>-<commit>`; the registry has no `nunam` project yet, so the first build was loaded onto the LXC over SSH. Checked: migrations applied, UI and API answer from the LAN, setup code issued, Postgres refuses non-TLS logins
 - [ ] Install the Indexer on the desktop and laptop (`docs/adding-a-machine.md`)
@@ -840,14 +844,15 @@ From the first full security audit (2026-11-20; report kept outside the repo). S
 
 ### Nunam.Indexer
 ```xml
-<!-- Installed (all Syncfusion packages must share one version; the license key is per major version) -->
-<PackageReference Include="Syncfusion.Licensing" Version="35.2.12" />
-<PackageReference Include="Syncfusion.Pdf.Net.Core" Version="35.2.12" />
-<PackageReference Include="Syncfusion.PdfToImageConverter.Net.Core" Version="35.2.12" />
-<PackageReference Include="Syncfusion.PDF.OCR.Net.Core" Version="35.2.12" />
-<PackageReference Include="Syncfusion.DocIO.Net.Core" Version="35.2.12" />
-<PackageReference Include="Syncfusion.XlsIO.Net.Core" Version="35.2.12" />
-<PackageReference Include="Syncfusion.Presentation.Net.Core" Version="35.2.12" />
+<!-- All AGPL-compatible: Apache-2.0, MIT, BSD, MPL-2.0 -->
+<PackageReference Include="PdfPig" Version="0.1.16" />
+<PackageReference Include="bblanchon.PDFium.Linux" Version="160.0.8165" />
+<PackageReference Include="bblanchon.PDFium.Win32" Version="160.0.8165" />
+<PackageReference Include="DocumentFormat.OpenXml" Version="3.5.1" />
+<PackageReference Include="ExcelDataReader" Version="3.9.0" />
+<PackageReference Include="ExcelNumberFormat" Version="1.2.0" />
+<PackageReference Include="OpenMcdf" Version="3.4.0" />
+<PackageReference Include="SkiaSharp" Version="4.150.1" />
 <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="4.150.1" />
 <PackageReference Include="Mime-Detective" Version="25.8.1" />
 <PackageReference Include="MetadataExtractor" Version="2.9.3" />
@@ -918,23 +923,16 @@ How the pieces outside the repo were set up, so they can be rebuilt. No secret v
 ### Dev AI backend
 - Development uses the homelab Ollama directly (`192.168.7.113:11434`, `gemma4:12b-it-qat` + `bge-m3`) — the Development configs of the API and AIWorker point at it, no overrides needed. A local Ollama on this workstation also has `bge-m3`.
 
-### Syncfusion (document parsing)
-- **License:** Essential Studio Enterprise Edition — **Community license** on the syncfusion.com account.
-- **Key generated (2026-11-19):** syncfusion.com → Account → *License & Downloads* → *Downloads & Keys* → **Get License Key**, with *Version* `35.x.x`, *Platform* **Document SDK** (covers PDF, DocIO, XlsIO, Presentation, OCR), *Project* `Nunam`. Since v31.1.17 keys are issued per product (UI Edition, Document SDK, DOCX/PDF/Spreadsheet Editor SDK), not per platform.
-- **The key only works for major version 35.** Upgrading the packages to 36+ needs a new key generated the same way.
-- **Where the key lives:** never in git.
-  - Dev: `dotnet user-secrets set "Syncfusion:LicenseKey" "<key>" --project Nunam.Indexer` (stored under `~/.microsoft/usersecrets/<UserSecretsId>/secrets.json` on Linux, `%APPDATA%\Microsoft\UserSecrets\` on Windows; set it again on each machine).
-  - Deployed indexers: environment variable `Syncfusion__LicenseKey`.
-  - Without a key the Indexer logs a warning and Syncfusion runs in evaluation mode.
-- **Packages:** come from nuget.org; no installer download is needed. The Linux "Download for Linux" installer on the account page isn't used.
-- **Use `Syncfusion.PdfToImageConverter.Net.Core`, not `.Net`:** `Syncfusion.PDF.OCR.Net.Core` depends on the `.Net.Core` one, and having both defines `PdfToImageConverter` twice (CS0433).
-- **Linux native bits:** `Syncfusion.PdfToImageConverter.Net.Core` ships PDFium for linux/win/osx itself, but its SkiaSharp dependency needs `SkiaSharp.NativeAssets.Linux.NoDependencies` pinned to the same SkiaSharp version Syncfusion resolves (4.150.1 for 35.2.12). Check `obj/project.assets.json` for the SkiaSharp version when bumping Syncfusion.
-- **Verified** with generated samples (text PDF, image-only PDF, password-protected PDF, .docx, .xlsx, .pptx): content and metadata extracted with no evaluation watermark text; the image-only PDF was rendered, described by the vision model, then embedded.
-- **OCR:** `Syncfusion.PDF.OCR.Net.Core` bundles Tesseract (4.0 and 5.0 builds for win/linux/osx, copied under `runtimes/` at build) and `eng.traineddata` only. Other languages: download `<lang>.traineddata` (e.g. `tam` from github.com/tesseract-ocr/tessdata) into a folder, set `Indexer:OcrTessDataPath` to it (copy `eng.traineddata` there too) and `Indexer:OcrLanguage` to e.g. `eng+tam`.
-- **OCR on Linux needs a `libdl` shim:** Syncfusion's OCR imports `libdl` by its unversioned name, which glibc 2.34+ only installs with `glibc-devel`. `OcrService` maps it to `libdl.so.2` with a `NativeLibrary.SetDllImportResolver` on the OCR assembly, so no system change is needed. The symptom without it: `DllNotFoundException: Unable to load shared library 'libdl'`.
+### Document parsing libraries
+- **Syncfusion was dropped (2026-11-21, Phase 10)** so the code can be AGPL-3.0: its Community License covers only its own licensees and its source isn't available, so nobody else could redistribute an AGPL indexer linked to it. The old key on syncfusion.com (Community license, Document SDK, v35) is no longer used; any `Syncfusion:LicenseKey` left in a machine's settings or user-secrets is ignored.
+- **NPOI was not used:** from 2.8 its NuGet binaries come with an "Open Source Maintenance Fee" agreement (a fee for users with revenue over US$10k). 2.7.x is still plain Apache-2.0, but ExcelDataReader + ExcelNumberFormat cover .xls/.xlsx with streaming reads.
+- **PDFium** comes from `bblanchon.PDFium.Linux`/`.Win32` (natives only); `Parsing/Pdfium.cs` is the P/Invoke wrapper. PDFium isn't thread-safe, so every call takes one lock (parses run one at a time anyway).
+- **OCR is the `tesseract` program**, run per page with the image on stdin and text on stdout (`OMP_THREAD_LIMIT=1`, 2-minute timeout). Found via `Indexer:OcrTesseractPath`, then PATH, then `Program Files\Tesseract-OCR` on Windows. Linux packages recommend `tesseract-ocr` + `tesseract-ocr-eng` (Fedora: `tesseract` + `tesseract-langpack-eng`); Windows: `winget install UB-Mannheim.TesseractOCR`, not bundled. Other languages are the distro's language packs.
+- **Dev without a system Tesseract:** a Debian container image `nunam-dev-tesseract` (tesseract 5.5 with eng and tam) behind a two-line wrapper script set as `Indexer__OcrTesseractPath`; the wrapper runs `docker run -i --rm --network none nunam-dev-tesseract tesseract "$@"`.
+- **Binary .doc** text is read from the Word 97 piece table (`Word97.cs`, [MS-DOC] 2.4.1) on top of OpenMcdf; title/author/subject/word count from the SummaryInformation stream (`OleProperties.cs`). Word 6/95 files get name only. **RTF** is a small tokenizer (`RtfText.cs`).
 
 ### Per-machine prerequisites for the Indexer
 - **ffmpeg + ffprobe** for video metadata and frames. Linux: distro package (`dnf install ffmpeg`). Windows: e.g. `winget install Gyan.FFmpeg`, then either have them on PATH or set `Indexer:FFmpegBinaryFolder` to the folder holding `ffmpeg.exe`/`ffprobe.exe`. Missing ffmpeg isn't fatal: videos are indexed by name only, with a warning in the log.
-- **Syncfusion license key** set on the machine (user-secrets or `Syncfusion__LicenseKey`).
-- Nothing else: Tesseract, PDFium and SkiaSharp natives come from NuGet.
+- **Tesseract** for OCR (see above). Without it, images and scanned PDFs are indexed without their text and the log says so once.
+- PDFium and SkiaSharp natives come from NuGet.
 - **Verified 2026-11-19 on Linux** with generated samples: an image with printed text and the same image as a scanned PDF (OCR read both exactly), a 3000×4000 JPEG with EXIF rotation/camera/GPS (stored upright as 4000×3000, metadata extracted), a tagged MP3, an MP4 with a title tag (frame grabbed and described). Semantic queries "electricity bill payment", "family celebration video", "devotional music" each ranked the matching file first.

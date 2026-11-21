@@ -21,8 +21,6 @@ root="$work/root"
 lib="$root/usr/lib/nunam-indexer"
 dotnet publish "$project" -c Release -r linux-x64 --self-contained -p:Version="$version" -o "$lib"
 rm -f "$lib/appsettings.Development.json"
-# Syncfusion copies its native libraries for every platform; keep this one's and the OCR language data.
-find "$lib/runtimes" -mindepth 1 -maxdepth 1 ! -name linux-x64 ! -name tessdata -exec rm -rf {} +
 chmod -R u=rwX,go=rX "$lib"
 chmod 0755 "$lib/Nunam.Indexer"
 
@@ -56,7 +54,7 @@ Section: utils
 Priority: optional
 Installed-Size: $(du -sk --exclude=DEBIAN "$root" | cut -f1)
 Depends: libc6, libgcc-s1, libstdc++6, libssl3t64 | libssl3, zlib1g, libicu76 | libicu74 | libicu72, systemd
-Recommends: libleptonica6 | liblept5, ffmpeg, acl
+Recommends: tesseract-ocr, tesseract-ocr-eng, ffmpeg, acl
 Description: Indexes local files into the Nunam search index
  Runs on a machine with files: scans and watches its folders, parses documents, images, audio and
  video, and writes what it finds to the Nunam database on the homelab.

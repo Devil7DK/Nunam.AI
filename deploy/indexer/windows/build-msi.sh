@@ -18,8 +18,6 @@ version=${VERSION:-$(dotnet msbuild "$project" -getProperty:Version)}
 pub="$work/publish"
 dotnet publish "$project" -c Release -r win-x64 --self-contained -p:Version="$version" -o "$pub"
 rm -f "$pub/appsettings.Development.json"
-# Syncfusion copies its native libraries for every platform; keep this one's and the OCR language data.
-find "$pub/runtimes" -mindepth 1 -maxdepth 1 ! -name win-x64 ! -name tessdata -exec rm -rf {} +
 
 # The executable is listed in Nunam.Indexer.wxs, in the component that installs the service.
 (cd "$work" && find publish -type f ! -path publish/Nunam.Indexer.exe | sort |

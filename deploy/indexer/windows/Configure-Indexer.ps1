@@ -76,16 +76,17 @@ function Get-GrantTargets([string]$path) {
 $service = Get-CimInstance Win32_Service -Filter "Name='$serviceName'"
 if (-not $service) { Finish "The $serviceName service isn't installed; install the Nunam Indexer MSI first." }
 
-# Tesseract and Leptonica link against it; without it every OCR call fails and files are indexed without recognized text.
-if (-not (Test-Path "$env:SystemRoot\System32\vcruntime140_1.dll")) {
-    Write-Warning "Visual C++ 2015-2022 x64 runtime not found; OCR will not work. Install it from https://aka.ms/vs/17/release/vc_redist.x64.exe"
+# The same places the indexer looks, unless Indexer:OcrTesseractPath points elsewhere.
+if (-not (Get-Command tesseract.exe -ErrorAction SilentlyContinue) -and
+    -not (Test-Path (Join-Path $env:ProgramFiles "Tesseract-OCR\tesseract.exe"))) {
+    Write-Warning "Tesseract not found; images and scanned PDFs will be indexed without their text. Install it with: winget install UB-Mannheim.TesseractOCR"
 }
 
 if (-not (Test-Path $settingsPath)) {
     Copy-Item (Join-Path $installDir "appsettings.Local.example.json") $settingsPath
 }
 
-# The file holds the database password and the Syncfusion key: only Administrators, SYSTEM and the
+# The file holds the database password: only Administrators, SYSTEM and the
 # service may read it. A fresh ACL, because a file copied in from elsewhere keeps explicit grants that
 # dropping inheritance leaves behind. Set before the file is filled in, so the secrets never sit in a readable file.
 $acl = New-Object System.Security.AccessControl.FileSecurity

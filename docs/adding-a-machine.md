@@ -5,12 +5,11 @@ Each machine with files runs its own `Nunam.Indexer`. It reads files locally and
 ## Prerequisites
 
 - **.NET 10** — the SDK to publish (or build elsewhere and copy the output plus the runtime).
-- **Visual C++ 2015–2022 x64 runtime** (Windows), for OCR: [vc_redist.x64.exe](https://aka.ms/vs/17/release/vc_redist.x64.exe). Most desktops already have it; a fresh install doesn't, and then scanned pages and photos are indexed without their text. The installer warns when it's missing.
+- **Tesseract**, to read text in photos and scanned PDFs. Windows: `winget install UB-Mannheim.TesseractOCR`. Linux: the packages recommend it. Without it those files are still indexed, without their text.
 - **ffmpeg** with `ffprobe`, for video metadata and frames. Windows: `winget install Gyan.FFmpeg`. Linux: the distro package. Without it videos are still indexed by name.
 - **Network access** to the homelab database port (5432 by default).
-- **The Syncfusion license key** (Community license, Document SDK, version 35). Bumping the Syncfusion packages to a new major version needs a new key.
 
-Tesseract (OCR), PDFium and SkiaSharp come with the NuGet packages.
+PDFium (PDF rendering) and SkiaSharp (images) come with the indexer.
 
 ## Settings
 
@@ -19,14 +18,14 @@ Everything machine-specific goes in `appsettings.Local.json` next to the executa
 | Setting | |
 |---|---|
 | `ConnectionStrings:Postgres` | The machine's own database login: run `docker/add-indexer-login.sh <machine-name>` on the homelab, save the certificate it prints as `nunam-db.crt` in the install folder, and paste the connection string with that file's full path. Don't share one login between machines. |
-| `Syncfusion:LicenseKey` | Without it documents are parsed in evaluation mode. |
 | `Indexer:WatchPaths` | Folders to index, recursively. A whole drive works too (`/`, `C:\`); see `SkipSystemFolders`. |
 | `Indexer:MachineName` | Name shown in the UI; defaults to the hostname. The machine is identified by hostname, so renaming here keeps its files. |
 | `Indexer:ExcludePatterns` | Defaults skip `.git`, `node_modules`, `bin`, `obj` and similar. Use `/` as the separator on every OS. Patterns match only below the watch path, so a watch path that is itself a `bin` folder is still indexed. |
 | `Indexer:SkipSystemFolders` | `true` by default: inside a watch path, skip the operating system and installed programs (on Linux `/usr`, `/etc`, `/var`, `/opt`, `/proc` and the like; on Windows `Windows`, `Program Files`, `ProgramData`, the recycle bin, the page file), app data in home folders (hidden folders such as `~/.config` and `~/.local`, and `AppData` on Windows), and package caches (`.cache`, `.nuget/packages`, `.venv`). A watch path inside one of those, such as `/opt/wiki`, is still indexed. |
 | `Indexer:RemoteManagement` | `false` by default. `true` lets admins and the machine's owners change some settings and restart, pause or resume the indexer from the **Machines** page. Only this file can turn it on. |
 | `Indexer:FFmpegBinaryFolder` | Only if ffmpeg isn't on `PATH`. |
-| `Indexer:OcrLanguage` | `eng` by default. For more, put the `.traineddata` files (e.g. `tam`) together with `eng.traineddata` in a folder, set `Indexer:OcrTessDataPath` to it, and use `eng+tam`. |
+| `Indexer:OcrLanguage` | `eng` by default. Use `eng+tam` and the like for more; each language needs its Tesseract data (`apt install tesseract-ocr-tam`, `dnf install tesseract-langpack-tam`, or a ticked language in the Windows installer). `Indexer:OcrTessDataPath` points at a different tessdata folder. |
+| `Indexer:OcrTesseractPath` | Only if `tesseract` isn't on `PATH` (or, on Windows, in `C:\Program Files\Tesseract-OCR`). |
 
 The file holds secrets: on Windows only Administrators, SYSTEM and the service can read it, on Linux only root and the service.
 
@@ -38,7 +37,7 @@ Build the installer on a Linux machine with the .NET SDK and msitools (`dnf inst
 deploy/indexer/windows/build-msi.sh   # artifacts/packages/nunam-indexer-<version>-x64.msi
 ```
 
-Run the MSI on the Windows machine. It installs the indexer to `C:\Program Files\Nunam\Indexer` with its own .NET runtime, and registers the `Nunam.Indexer` service. The service stays stopped until the settings are filled in. Then open Start → **Configure Nunam Indexer**. It asks for administrator rights, opens `appsettings.Local.json` in Notepad and waits for you to save and close it. It then sets the service to delayed automatic start that restarts on failure, grants read access to the watch paths and starts it. Run it again after changing the watch paths. Installing a newer MSI keeps the settings and starts the service again on its own. OCR needs the [Visual C++ 2015–2022 x64 runtime](https://aka.ms/vs/17/release/vc_redist.x64.exe); video needs ffmpeg on `PATH` or `Indexer:FFmpegBinaryFolder`.
+Run the MSI on the Windows machine. It installs the indexer to `C:\Program Files\Nunam\Indexer` with its own .NET runtime, and registers the `Nunam.Indexer` service. The service stays stopped until the settings are filled in. Then open Start → **Configure Nunam Indexer**. It asks for administrator rights, opens `appsettings.Local.json` in Notepad and waits for you to save and close it. It then sets the service to delayed automatic start that restarts on failure, grants read access to the watch paths and starts it. Run it again after changing the watch paths. Installing a newer MSI keeps the settings and starts the service again on its own. OCR needs Tesseract (the configure script warns when it can't find it); video needs ffmpeg on `PATH` or `Indexer:FFmpegBinaryFolder`.
 
 The service runs as its own virtual account, `NT SERVICE\Nunam.Indexer`, which can read only what it is given. A subfolder that blocks inherited permissions stays unreadable, and its files are logged as failed. With a whole drive or `C:\Users` as the watch path, each profile's own folders (Documents, Desktop, Pictures, …) are granted instead of the drive. `AppData` and hidden folders are left out, and the rest of the drive is readable to the Users group anyway.
 
@@ -60,7 +59,7 @@ Build the packages on a Linux machine with the .NET SDK and Docker:
 deploy/indexer/linux/build-packages.sh   # artifacts/packages/nunam-indexer_<version>_amd64.deb and nunam-indexer-<version>-1.x86_64.rpm
 ```
 
-Install the one that fits: `sudo apt install ./nunam-indexer_0.1.0_amd64.deb` (Debian 12 or later, Ubuntu) or `sudo dnf install ./nunam-indexer-0.1.0-1.x86_64.rpm` (Fedora). The .NET runtime is included; ffmpeg (video) and leptonica (OCR) come as recommended packages. Then:
+Install the one that fits: `sudo apt install ./nunam-indexer_0.1.0_amd64.deb` (Debian 12 or later, Ubuntu) or `sudo dnf install ./nunam-indexer-0.1.0-1.x86_64.rpm` (Fedora). The .NET runtime is included; ffmpeg (video) and Tesseract with English (OCR) come as recommended packages. Then:
 
 1. Fill in `/etc/nunam-indexer/appsettings.Local.json`, save the database certificate as `/etc/nunam-indexer/nunam-db.crt`, and use that path in the connection string. The file is readable only by root and the service.
 2. The service runs as the `nunam` system user, which can't read anyone's home folder. Let it read each watch path:
