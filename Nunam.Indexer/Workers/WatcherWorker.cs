@@ -40,23 +40,17 @@ namespace Nunam.Indexer.Workers
                     continue;
                 }
 
-                var watcher = new FileSystemWatcher(root)
+                foreach (var (folder, recursive) in WatchPlan.For(root, pathFilter))
                 {
-                    IncludeSubdirectories = true,
-                    NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName | NotifyFilters.LastWrite | NotifyFilters.Size,
-                    InternalBufferSize = 64 * 1024,
-                };
-                watcher.Created += (_, e) => Buffer(e.FullPath);
-                watcher.Changed += (_, e) => Buffer(e.FullPath);
-                watcher.Deleted += (_, e) => Buffer(e.FullPath);
-                watcher.Renamed += (_, e) =>
-                {
-                    Buffer(e.OldFullPath);
-                    Buffer(e.FullPath);
-                };
-                watcher.Error += OnError;
-                watcher.EnableRaisingEvents = true;
-                watchers.Add(watcher);
+                    try
+                    {
+                        watchers.Add(Watch(folder, recursive));
+                    }
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+                    {
+                        logger.LogWarning(ex, "Cannot watch {Path}; its changes are picked up at the next start", folder);
+                    }
+                }
 
                 logger.LogInformation("Watching {Path}", root);
             }
@@ -147,6 +141,27 @@ namespace Nunam.Indexer.Workers
                 var removed = await IndexRemover.RemoveAsync(db, machine.MachineId, path, cancellationToken);
                 if (removed > 0) logger.LogInformation("Removed {Count} file(s) under {Path} from the index", removed, path);
             }
+        }
+
+        private FileSystemWatcher Watch(string folder, bool recursive)
+        {
+            var watcher = new FileSystemWatcher(folder)
+            {
+                IncludeSubdirectories = recursive,
+                NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName | NotifyFilters.LastWrite | NotifyFilters.Size,
+                InternalBufferSize = 64 * 1024,
+            };
+            watcher.Created += (_, e) => Buffer(e.FullPath);
+            watcher.Changed += (_, e) => Buffer(e.FullPath);
+            watcher.Deleted += (_, e) => Buffer(e.FullPath);
+            watcher.Renamed += (_, e) =>
+            {
+                Buffer(e.OldFullPath);
+                Buffer(e.FullPath);
+            };
+            watcher.Error += OnError;
+            watcher.EnableRaisingEvents = true;
+            return watcher;
         }
 
         private void Buffer(string path)

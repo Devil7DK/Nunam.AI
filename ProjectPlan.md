@@ -776,6 +776,13 @@ From the first full security audit (2026-11-20; report kept outside the repo). S
 - [x] Sign-in lockout counter updated atomically [unverified by the audit] — one `UPDATE … RETURNING` counts the failure and sets the lock, so concurrent wrong guesses can't overwrite each other's count. Checked: 9 simultaneous wrong passwords locked the account (was: count stayed at 1)
 - [x] Hardening notes from the same audit — Postgres requires TLS for every TCP login (self-signed certificate made at first init; indexers pin it with `SSL Mode=VerifyCA`, and `add-indexer-login.sh` prints it); the Windows service runs as `NT SERVICE\Nunam.Indexer` with read access granted to each watch path; the Linux unit is sandboxed (read-only filesystem, private /tmp, syscall filter; `systemd-analyze security` 1.6); base images are pinned by digest; ffmpeg/ffprobe accept only plain files read by video container demuxers; roles, search mode and type parse by name only; admin demotions and deletions are serialized so one enabled admin always remains; previews are revalidated on every load (`no-cache` + ETag) so revoked access ends at once; nginx trusts forwarded address and scheme only from `NUNAM_TRUSTED_PROXY`; the startup scan drops entries a watch path or exclude pattern no longer covers, keeping those under a watch path that is offline
 
+### Phase 8 — Whole-drive indexing and installers
+- [x] Whole drive as a watch path, Linux — `/` works as a root (it never matched before); `Indexer:SkipSystemFolders` (on by default) skips the OS and program folders (`/usr`, `/etc`, `/var`, `/opt`, `/proc`, …), hidden folders in home folders and package caches inside a root, but not a root chosen inside one of them. Exclude patterns now match only below the root. The watcher goes folder by folder down to each skipped system folder instead of one recursive watch, which on `/` put an inotify watch on all of `/proc`. Checked on this workstation: `/` went from 543 k files to 227 k (home folders, `/srv`, `/mnt`), nothing under a skipped folder was queued, 28 watchers, no errors
+- [ ] Whole drive as a watch path, Windows (`C:\`)
+- [ ] Linux packages (`.deb`, `.rpm`)
+- [ ] Windows installer (`.msi`)
+- [ ] macOS — deferred; built and tested on a Mac later
+
 ### Rollout — after features, testing and review are done
 - [ ] Deploy the homelab stack (`docs/deployment.md`)
 - [ ] Install the Indexer on the desktop and laptop (`docs/adding-a-machine.md`)

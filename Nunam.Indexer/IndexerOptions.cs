@@ -25,6 +25,12 @@ namespace Nunam.Indexer
             "/$RECYCLE.BIN/", "/System Volume Information/", "*.tmp",
         ];
 
+        /// <summary>
+        /// Also skip the OS, installed programs, caches and app data inside a watch root
+        /// (<see cref="Indexing.SystemFolders"/>), so a whole drive can be a watch path.
+        /// </summary>
+        public bool SkipSystemFolders { get; set; } = true;
+
         /// <summary>Files larger than this are indexed for metadata only — their content is not read.</summary>
         public int MaxFileSizeMb { get; set; } = 32;
 
