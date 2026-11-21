@@ -1,0 +1,66 @@
+:root {
+  color-scheme: dark;
+
+  --font-display: 'Continuum', system-ui, sans-serif;
+  --font-body: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'Cascadia Code', Consolas, monospace;
+
+  --warning: #f2b134;
+  --warning-bg: rgba(242, 177, 52, 0.13);
+  --warning-border: rgba(242, 177, 52, 0.35);
+
+  --bg: #0b0d10;
+  --bg-grad-1: #0b0d10;
+  --bg-grad-2: #1a1240;
+  --bg-grad-3: #10163a;
+  --bg-grad-4: #0d0f16;
+
+  --surface: rgba(255, 255, 255, 0.04);
+  --surface-strong: rgba(255, 255, 255, 0.07);
+  --surface-border: rgba(255, 255, 255, 0.1);
+
+  --text: #c7cbd6;
+  --text-strong: #f5f6fa;
+  --text-muted: #8a90a0;
+
+  --accent: #543e98;
+  --accent-hover: #6b52b8;
+  --accent-fg: #ffffff;
+  --accent-soft: #b6a3e0; /* accent for text/links on dark */
+  --accent-glow: #c7a7ff;
+  --accent-bg: rgba(124, 95, 206, 0.16); /* soft accent fill for chips */
+
+  /* Drifting-stars colour, as an "r, g, b" */
+  --star-rgb: 199, 167, 255;
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+
+  --bg: #f5f4fb;
+  --bg-grad-1: #f3eefe;
+  --bg-grad-2: #ffffff;
+  --bg-grad-3: #eaf0ff;
+  --bg-grad-4: #f6f2ff;
+
+  --surface: rgba(255, 255, 255, 0.6);
+  --surface-strong: rgba(255, 255, 255, 0.8);
+  --surface-border: rgba(84, 62, 152, 0.15);
+
+  --text: #4a4557;
+  --text-strong: #1c1726;
+  --text-muted: #6f6980;
+
+  --accent: #543e98;
+  --accent-hover: #6b52b8;
+  --accent-fg: #ffffff;
+  --accent-soft: #543e98;
+  --accent-glow: #8267ad;
+  --accent-bg: rgba(84, 62, 152, 0.1);
+
+  --warning: #a86a00;
+  --warning-bg: rgba(242, 177, 52, 0.15);
+  --warning-border: rgba(168, 106, 0, 0.3);
+
+  --star-rgb: 130, 103, 173;
+}

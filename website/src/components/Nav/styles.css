@@ -1,0 +1,105 @@
+header.nav {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  padding: 12px 20px;
+
+  > div.inner {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    max-width: 1120px;
+    margin: 0 auto;
+    padding: 8px 12px 8px 16px;
+    border: 1px solid var(--surface-border);
+    border-radius: 999px;
+    background: var(--surface);
+    backdrop-filter: blur(12px);
+
+    justify-content: space-between;
+
+    > a.brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      text-decoration: none;
+      color: var(--text-strong);
+
+      > img.logo {
+        display: block;
+        border-radius: 8px;
+      }
+
+      > span.wordmark {
+        font-family: var(--font-display);
+        font-weight: 700;
+        font-size: 1.15rem;
+        letter-spacing: 0.02em;
+
+        > span.tld {
+          color: var(--accent-soft);
+        }
+      }
+    }
+
+    > nav.links {
+      position: relative;
+      display: flex;
+      align-items: center;
+      gap: 24px;
+      margin-inline: auto;
+
+      > a {
+        color: var(--text-muted);
+        text-decoration: none;
+        font-size: 0.95rem;
+        transition: color 0.15s ease;
+
+        &:hover {
+          color: var(--text-strong);
+        }
+
+        &.is-active {
+          color: var(--text-strong);
+        }
+      }
+
+      > span.indicator {
+        position: absolute;
+        bottom: -7px;
+        left: 0;
+        height: 2px;
+        border-radius: 999px;
+        background: var(--accent-soft);
+      }
+
+      @media (max-width: 760px) {
+        display: none;
+      }
+    }
+
+    > div.actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+
+      > a.icon-link {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 40px;
+        height: 40px;
+        border-radius: 999px;
+        color: var(--text);
+        transition:
+          color 0.15s ease,
+          background 0.15s ease;
+
+        &:hover {
+          color: var(--accent-soft);
+          background: var(--surface-strong);
+        }
+      }
+    }
+  }
+}

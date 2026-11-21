@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108" width="108" height="108" role="img" aria-label="Nunam.AI">
+  <rect width="108" height="108" rx="24" fill="#C7A7FF" />
+  <circle cx="47" cy="47" r="21" fill="none" stroke="#543e98" stroke-width="9" />
+  <path d="M62.5 62.5 80 80" stroke="#543e98" stroke-width="11" stroke-linecap="round" />
+  <path d="M47 35.5c1.2 6.2 5.3 10.3 11.5 11.5-6.2 1.2-10.3 5.3-11.5 11.5-1.2-6.2-5.3-10.3-11.5-11.5 6.2-1.2 10.3-5.3 11.5-11.5Z" fill="#8267ad" />
+</svg>

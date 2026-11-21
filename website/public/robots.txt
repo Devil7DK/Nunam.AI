@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://nunam.dineshkumar.dev/sitemap.xml

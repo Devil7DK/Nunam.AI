@@ -1,0 +1,254 @@
+section.section.docs > div.inner {
+  display: grid;
+  grid-template-columns: 15rem minmax(0, 1fr);
+  gap: 40px;
+  padding-top: 40px;
+
+  > aside.sidebar {
+    > nav {
+      position: sticky;
+      top: 96px;
+
+      > p.label {
+        margin: 0 0 12px;
+        font-size: 0.78rem;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--accent-soft);
+      }
+
+      ul {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      > ul > li {
+        margin-bottom: 4px;
+
+        > a {
+          display: block;
+          padding: 7px 12px;
+          border-radius: 10px;
+          color: var(--text-muted);
+          font-size: 0.95rem;
+          text-decoration: none;
+
+          &:hover {
+            color: var(--text-strong);
+            background: var(--surface);
+          }
+
+          &[aria-current='page'] {
+            color: var(--text-strong);
+            background: var(--surface-strong);
+          }
+        }
+
+        > ul.headings {
+          margin: 4px 0 10px 12px;
+          padding-left: 12px;
+          border-left: 1px solid var(--surface-border);
+
+          a {
+            display: block;
+            padding: 4px 0;
+            color: var(--text-muted);
+            font-size: 0.86rem;
+            text-decoration: none;
+
+            &:hover {
+              color: var(--accent-soft);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  > article.doc {
+    min-width: 0;
+
+    > header {
+      margin-bottom: 28px;
+
+      > p.eyebrow {
+        margin: 0 0 10px;
+        font-size: 0.8rem;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--accent-soft);
+      }
+
+      > h1.title {
+        font-size: clamp(1.9rem, 4vw, 2.6rem);
+        line-height: 1.1;
+        letter-spacing: -0.01em;
+      }
+
+      > p.subtitle {
+        margin: 12px 0 0;
+        font-size: 1.05rem;
+        color: var(--text-muted);
+      }
+    }
+
+    > p.edit {
+      margin: 20px 0 0;
+      font-size: 0.9rem;
+
+      > a {
+        color: var(--text-muted);
+
+        &:hover {
+          color: var(--accent-soft);
+        }
+      }
+    }
+  }
+
+  @media (max-width: 860px) {
+    grid-template-columns: 1fr;
+    gap: 24px;
+
+    > aside.sidebar > nav {
+      position: static;
+
+      ul.headings {
+        display: none;
+      }
+    }
+  }
+}
+
+div.prose {
+  padding: 32px 36px;
+  border: 1px solid var(--surface-border);
+  border-radius: 20px;
+  background: var(--surface);
+  backdrop-filter: blur(10px);
+  font-size: 1rem;
+  line-height: 1.7;
+  color: var(--text);
+
+  > :first-child {
+    margin-top: 0;
+  }
+
+  > :last-child {
+    margin-bottom: 0;
+  }
+
+  h2,
+  h3 {
+    scroll-margin-top: 96px;
+    font-family: var(--font-body);
+    font-weight: 600;
+    color: var(--text-strong);
+  }
+
+  h2 {
+    margin: 40px 0 12px;
+    font-size: 1.35rem;
+  }
+
+  h3 {
+    margin: 28px 0 10px;
+    font-size: 1.1rem;
+  }
+
+  p,
+  ul,
+  ol {
+    margin: 0 0 16px;
+  }
+
+  ul,
+  ol {
+    padding-left: 1.4em;
+  }
+
+  li + li {
+    margin-top: 4px;
+  }
+
+  strong {
+    color: var(--text-strong);
+  }
+
+  a {
+    color: var(--accent-soft);
+    text-decoration: none;
+
+    &:hover {
+      text-decoration: underline;
+    }
+  }
+
+  code {
+    padding: 1px 6px;
+    border-radius: 6px;
+    background: var(--accent-bg);
+    color: var(--text-strong);
+    font-family: var(--font-mono);
+    font-size: 0.86em;
+    overflow-wrap: anywhere;
+  }
+
+  pre {
+    margin: 0 0 20px;
+    padding: 16px 18px;
+    overflow-x: auto;
+    border: 1px solid var(--surface-border);
+    border-radius: 12px;
+    background: var(--surface-strong);
+    scrollbar-color: var(--surface-border) transparent;
+
+    > code {
+      padding: 0;
+      background: none;
+      font-size: 0.85rem;
+      line-height: 1.6;
+      overflow-wrap: normal;
+    }
+  }
+
+  table {
+    display: block;
+    width: 100%;
+    margin: 0 0 20px;
+    overflow-x: auto;
+    border-collapse: collapse;
+    font-size: 0.92rem;
+  }
+
+  th,
+  td {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--surface-border);
+    text-align: left;
+    vertical-align: top;
+  }
+
+  td > code:only-child {
+    white-space: nowrap;
+  }
+
+  th {
+    color: var(--text-strong);
+    font-weight: 600;
+  }
+
+  blockquote {
+    margin: 0 0 16px;
+    padding: 4px 0 4px 16px;
+    border-left: 2px solid var(--accent-soft);
+    color: var(--text-muted);
+  }
+
+  @media (max-width: 600px) {
+    padding: 22px 18px;
+  }
+}

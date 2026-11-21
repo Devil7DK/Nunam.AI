@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta
+      name="theme-color"
+      media="(prefers-color-scheme: dark)"
+      content="#0b0d10"
+    />
+    <meta
+      name="theme-color"
+      media="(prefers-color-scheme: light)"
+      content="#f5f4fb"
+    />
+
+    <title>Nunam.AI</title>
+    <meta
+      name="description"
+      content="Self-hosted search for every file on your home network. Local AI describes your photos and scans and finds files by meaning, and nothing leaves your LAN."
+    />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Nunam.AI" />
+    <meta property="og:title" content="Nunam.AI" />
+    <meta
+      property="og:description"
+      content="Self-hosted search for every file on your home network. Local AI describes your photos and scans and finds files by meaning, and nothing leaves your LAN."
+    />
+    <meta property="og:url" content="https://nunam.dineshkumar.dev/" />
+    <meta property="og:image" content="https://nunam.dineshkumar.dev/og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Nunam.AI" />
+    <meta
+      name="twitter:description"
+      content="Self-hosted search for every file on your home network. Local AI describes your photos and scans and finds files by meaning, and nothing leaves your LAN."
+    />
+    <meta name="twitter:image" content="https://nunam.dineshkumar.dev/og.png" />
+
+    <link rel="canonical" href="https://nunam.dineshkumar.dev/" />
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Nunam.AI",
+        "operatingSystem": "Windows, Linux",
+        "applicationCategory": "UtilitiesApplication",
+        "description": "Self-hosted search for every file on your home network. Local AI describes your photos and scans and finds files by meaning, and nothing leaves your LAN.",
+        "url": "https://nunam.dineshkumar.dev/",
+        "image": "https://nunam.dineshkumar.dev/og.png",
+        "isAccessibleForFree": true,
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+        "author": { "@type": "Person", "name": "Dineshkumar T" }
+      }
+    </script>
+
+    <script>
+      // Set the theme before first paint to avoid a flash of the wrong theme.
+      (function () {
+        try {
+          var t = localStorage.getItem('theme');
+          if (t !== 'light' && t !== 'dark') {
+            t = matchMedia('(prefers-color-scheme: light)').matches
+              ? 'light'
+              : 'dark';
+          }
+          document.documentElement.dataset.theme = t;
+        } catch (e) {}
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/index.tsx"></script>
+  </body>
+</html>

@@ -1,0 +1,91 @@
+section.section.features > div.inner {
+  > div.features-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 20px;
+
+    > article.card {
+      padding: 28px 24px;
+      border: 1px solid var(--surface-border);
+      border-radius: 18px;
+      background: var(--surface);
+      backdrop-filter: blur(10px);
+      transition:
+        transform 0.15s ease,
+        border-color 0.15s ease,
+        background 0.15s ease;
+
+      &:hover {
+        transform: translateY(-3px);
+        border-color: var(--accent-soft);
+        background: var(--surface-strong);
+      }
+
+      > span.icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 48px;
+        height: 48px;
+        margin-bottom: 18px;
+        border-radius: 12px;
+        background: var(--accent-bg);
+        color: var(--accent-soft);
+      }
+
+      > h3.title {
+        margin: 0 0 8px;
+        font-family: var(--font-body);
+        font-weight: 600;
+        font-size: 1.15rem;
+        color: var(--text-strong);
+      }
+
+      > p.desc,
+      > div > p.desc {
+        margin: 0;
+        font-size: 0.98rem;
+        line-height: 1.6;
+        color: var(--text-muted);
+      }
+
+      > div > h3.title {
+        margin: 0 0 8px;
+        font-family: var(--font-body);
+        font-weight: 600;
+        font-size: 1.15rem;
+        color: var(--text-strong);
+      }
+
+      /* A full-row card for a feature that needs more words (and its limits). */
+      &.wide {
+        grid-column: 1 / -1;
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 20px;
+        align-items: start;
+
+        > span.icon {
+          margin-bottom: 0;
+        }
+
+        @media (max-width: 600px) {
+          grid-template-columns: 1fr;
+          gap: 0;
+
+          > span.icon {
+            margin-bottom: 18px;
+          }
+        }
+      }
+    }
+
+    @media (max-width: 900px) {
+      grid-template-columns: repeat(2, 1fr);
+    }
+
+    @media (max-width: 600px) {
+      grid-template-columns: 1fr;
+    }
+  }
+}
