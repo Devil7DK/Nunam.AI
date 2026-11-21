@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Builds the Linux indexer packages, artifacts/packages/nunam-indexer_<version>_amd64.deb and
-# nunam-indexer-<version>-1.x86_64.rpm. Needs the .NET SDK and Docker; the packaging tools run in containers.
+# nunam-indexer-<version>-1.x86_64.rpm. Needs the .NET SDK and Docker; the packaging tools run in
+# containers. VERSION=x.y.z overrides the version in Nunam.Indexer.csproj.
 set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -13,12 +14,12 @@ fedora_image="fedora:44@sha256:15da97ed9aa94dd3d92c3925eb89520f6c80e07ea7ee24cba
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 mkdir -p "$out"
-version=$(dotnet msbuild "$project" -getProperty:Version)
+version=${VERSION:-$(dotnet msbuild "$project" -getProperty:Version)}
 
 # Self-contained, so no .NET runtime is needed on the machine.
 root="$work/root"
 lib="$root/usr/lib/nunam-indexer"
-dotnet publish "$project" -c Release -r linux-x64 --self-contained -o "$lib"
+dotnet publish "$project" -c Release -r linux-x64 --self-contained -p:Version="$version" -o "$lib"
 rm -f "$lib/appsettings.Development.json"
 # Syncfusion copies its native libraries for every platform; keep this one's and the OCR language data.
 find "$lib/runtimes" -mindepth 1 -maxdepth 1 ! -name linux-x64 ! -name tessdata -exec rm -rf {} +
