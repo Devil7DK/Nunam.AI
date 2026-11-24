@@ -5,34 +5,30 @@ The stack is `compose.yaml` beside this file. Its settings are in `.env`, which 
 | Service | What it is | Reachable at |
 | --- | --- | --- |
 | `nunam-ui` | the web UI, and the proxy to the API | `UI_PORT` (3000) on the LAN |
-| `postgres` | the index: files, text, previews, vectors, accounts | `POSTGRES_PORT` (5432) on the LAN, TLS only |
-| `nunam-api` | search, previews, sign-in | inside the stack only, through `nunam-ui` |
-| `nunam-aiworker` | describes images and embeds files, with the Ollama server | nowhere; it takes jobs |
+| `postgres` | the index: files, text, previews, vectors, accounts | inside the stack only, TLS only |
+| `nunam-api` | search, previews, sign-in, and what indexers and the AI worker call | inside the stack only, through `nunam-ui` |
+| `nunam-aiworker` | describes images and embeds files, with the Ollama server | nowhere; it takes jobs from the API |
 | `migrations` | applies the schema, then exits | nowhere |
 
-Postgres is on the LAN because each indexer writes to it directly. Every login made with `add-indexer-login.sh` can read and write only its own machine's rows, and must verify the server's certificate.
+Indexers on other machines reach the API through the UI's port, each with its own machine token; nothing else is published.
 
 ## Bringing it up the first time
 
 ```bash
 cd /srv/docker
 cp .env.example .env && chmod 600 .env
-# Fill in the three passwords, AI_BASE_URL and TZ.
+# Fill in the two passwords, NUNAM_WORKER_TOKEN, AI_BASE_URL and TZ.
 docker compose up -d
 docker compose logs nunam-api | grep "setup code"
 ```
 
 Open `http://<this machine>:3000` and enter the setup code with a user name and password; that account is the first admin. The code works only while there are no accounts.
 
-The `postgres/` scripts run once, when the data volume is created: `10-roles.sh` makes the service logins from the passwords in `.env`, and `20-tls.sh` makes the self-signed certificate that indexers pin. Changing those passwords in `.env` later does not change them in the database.
+The `postgres/` scripts run once, when the data volume is created: `10-roles.sh` makes the API's login from its password in `.env`, and `20-tls.sh` makes the self-signed certificate Postgres requires for TCP logins. Changing those passwords in `.env` later does not change them in the database.
 
 ## Adding a machine
 
-```bash
-./add-indexer-login.sh <machine-name> <this machine's address>
-```
-
-It prints the certificate to save on that machine and the connection string for its `appsettings.Local.json`. Installing the indexer itself is in *Adding a machine to the index* in the Nunam docs.
+Copy the indexer packages (`nunam-indexer-<version>-x64.msi`, `nunam-indexer_<version>_amd64.deb`, `nunam-indexer-<version>-1.x86_64.rpm`) into `packages/` beside this file; the newest of each is offered. Then, in the web UI, *Machines* → *Add machine* shows the command to run on the machine. *Adding a machine to the index* in the Nunam docs has the rest.
 
 ## Updating
 

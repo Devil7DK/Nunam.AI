@@ -1,7 +1,7 @@
 #!/bin/bash
 # Runs once, when the data volume is first initialised (sourced by the image's entrypoint, so no cd).
-# Indexers log in across the LAN: TCP logins must use TLS, with a self-signed certificate that each
-# indexer pins (docker/add-indexer-login.sh prints it). Socket logins inside the container are unchanged.
+# TCP logins must use TLS, with a self-signed certificate; the services connect with SSL Mode=Require.
+# Socket logins inside the container are unchanged.
 set -euo pipefail
 
 openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 3650 \
