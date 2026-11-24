@@ -17,7 +17,7 @@ namespace Nunam.API.Endpoints
     /// </summary>
     public static class IndexerEndpoints
     {
-        // Indexers report every 30 s; three missed reports means it's off or can't reach the database.
+        // Indexers report every 30 s; three missed reports means it's off or can't reach the server.
         private static readonly TimeSpan OnlineWindow = TimeSpan.FromSeconds(90);
         private const int RecentCommandCount = 20;
         private const int MaxLogPage = 500;
