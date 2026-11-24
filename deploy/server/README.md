@@ -22,7 +22,7 @@ docker compose up -d
 docker compose logs nunam-api | grep "setup code"
 ```
 
-The images come from GitHub Packages (`ghcr.io/devil7dk/nunam-*`). Each [release](https://github.com/Devil7DK/Nunam.AI/releases) is tagged with its version (`0.4.0`, and `0.4` for the newest patch); `latest` and dated tags (`20261124-abc1234`) follow every push to `master`. Each release also attaches `nunam-server-<version>.tar.gz`, this folder with `NUNAM_TAG` set to that version, and the images as `docker load` archives for a server that can't reach ghcr.io.
+The images come from GitHub Packages (`ghcr.io/devil7dk/nunam-*`). Each [release](https://github.com/Devil7DK/Nunam.AI/releases) is tagged with its version (`0.1.0`, and `0.1` for the newest patch); `latest` and dated tags (`20261124-abc1234`) follow every push to `master`. Each release also attaches `nunam-server-<version>.tar.gz`, this folder with `NUNAM_TAG` set to that version, and the images as `docker load` archives for a server that can't reach ghcr.io.
 
 Open `https://<this machine>:3443`, accept the self-signed certificate, and enter the setup code with a user name and password; that account is the first admin. The code works only while there are no accounts.
 
@@ -41,7 +41,7 @@ docker compose pull
 docker compose up -d
 ```
 
-`migrations` runs on every `up` and skips what is already applied; the API and AI worker start after it. To stay on one release, set `NUNAM_TAG` to its version (`0.4.0`), or to `0.4` for its patches; a dated tag pins one build of `master`. Copy the same release's indexer packages into `packages/`.
+`migrations` runs on every `up` and skips what is already applied; the API and AI worker start after it. To stay on one release, set `NUNAM_TAG` to its version (`0.1.0`), or to `0.1` for its patches; a dated tag pins one build of `master`. Copy the same release's indexer packages into `packages/`.
 
 ## Looking at it
 

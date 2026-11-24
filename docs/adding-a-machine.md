@@ -13,7 +13,7 @@ Run it on the machine. It downloads the indexer from the server, installs it, tr
 
 The code works once, for an hour. The command downloads the newest package the server has ([indexer packages](deployment.md)); if it has none, use the command under *Indexer already installed?* after installing the package by hand, as below.
 
-**Reconnect** on a machine's page does the same for a machine that is already in Nunam: it gives the machine a new token and keeps its files. Use it after reinstalling the machine, or to update an indexer older than 0.4.
+**Reconnect** on a machine's page does the same for a machine that is already in Nunam: it gives the machine a new token and keeps its files. Use it after reinstalling the machine.
 
 ## Prerequisites
 
@@ -75,7 +75,7 @@ Each [release](https://github.com/Devil7DK/Nunam.AI/releases) has the packages. 
 deploy/indexer/linux/build-packages.sh   # artifacts/packages/nunam-indexer_<version>_amd64.deb and nunam-indexer-<version>-1.x86_64.rpm
 ```
 
-The install command installs the one that fits and does steps 1–3. By hand: `sudo apt install ./nunam-indexer_0.4.0_amd64.deb` (Debian 12 or later, Ubuntu) or `sudo dnf install ./nunam-indexer-0.4.0-1.x86_64.rpm` (Fedora). The .NET runtime is included; ffmpeg (video) and Tesseract with English (OCR) come as recommended packages. Then:
+The install command installs the one that fits and does steps 1–3. By hand: `sudo apt install ./nunam-indexer_0.1.0_amd64.deb` (Debian 12 or later, Ubuntu) or `sudo dnf install ./nunam-indexer-0.1.0-1.x86_64.rpm` (Fedora). The .NET runtime is included; ffmpeg (video) and Tesseract with English (OCR) come as recommended packages. Then:
 
 1. Connect it with the command under *Indexer already installed?* in *Add machine*. It writes the server's address and the machine's token to `/etc/nunam-indexer/appsettings.Local.json`, which only root and the service can read. Watch paths go there too, unless they are set in the web UI.
 2. Choose the user it runs as. The install command asks when it runs in a terminal. `sudo nunam-indexer-account` asks, or name one directly:
