@@ -63,8 +63,14 @@ services:
     restart: unless-stopped
     ports:
       - "${UI_PORT:-3000}:80"
+      - "${UI_HTTPS_PORT:-3443}:443"
     environment:
       NUNAM_TRUSTED_PROXY: ${NUNAM_TRUSTED_PROXY:-127.0.0.1/32}
+      NUNAM_TLS_NAMES: ${NUNAM_TLS_NAMES:-}
+      NUNAM_TLS_PIN: ${NUNAM_TLS_PIN:-auto}
+    volumes:
+      # cert.pem and key.pem for the HTTPS port: yours, or a self-signed pair created on first start.
+      - ./tls:/etc/nunam/tls
     depends_on:
       - nunam-api
 

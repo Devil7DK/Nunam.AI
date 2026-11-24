@@ -364,3 +364,6 @@ FodyWeavers.xsd
 # Per-machine settings and secrets
 appsettings.Local.json
 docker/.env
+
+# Certificates the web UI container serves or created
+docker/tls/
