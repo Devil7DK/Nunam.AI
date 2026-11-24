@@ -1,8 +1,7 @@
 using System.IO;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Nunam.Core.AI;
-using Nunam.Core.Data;
+using Nunam.Core.Agents;
 using Nunam.Core.Entities;
 using Nunam.Core.Files;
 using Nunam.Core.Jobs;
@@ -10,18 +9,20 @@ using Nunam.Core.Jobs;
 namespace Nunam.AIWorker.Workers
 {
     /// <summary>
-    /// Consumes <see cref="IndexJobKind.Describe"/> jobs: feeds each file's preview image
-    /// to the vision model and stores the resulting text in <see cref="IndexedFile.Description"/>.
-    /// The file's Embed job is enqueued here, once the description exists (or describing has
-    /// failed for good), so the vector always includes what the vision model saw.
+    /// Consumes <see cref="IndexJobKind.Describe"/> jobs: feeds each file's preview image to the vision
+    /// model and sends back the text for <see cref="IndexedFile.Description"/>. The file's Embed job is
+    /// queued with the result, once the description exists (or describing has failed for good), so the
+    /// vector always includes what the vision model saw.
     /// </summary>
     public class DescribeWorker(
+        WorkerServer server,
         IServiceScopeFactory scopeFactory,
         IOptions<AIWorkerOptions> options,
         ILogger<DescribeWorker> logger) : PollingWorker(logger)
     {
         private readonly AIWorkerOptions _options = options.Value;
         private readonly ILogger<DescribeWorker> _logger = logger;
+        private readonly ResultOutbox _outbox = new(server, logger);
 
         protected override string Name => nameof(DescribeWorker);
         protected override TimeSpan IdleInterval => TimeSpan.FromSeconds(_options.IdlePollSeconds);
@@ -30,22 +31,19 @@ namespace Nunam.AIWorker.Workers
 
         protected override async Task RecoverStaleAsync(CancellationToken cancellationToken)
         {
-            using var scope = scopeFactory.CreateScope();
-            var queue = scope.ServiceProvider.GetRequiredService<JobQueue>();
-            var (requeued, failed) = await queue.RecoverStaleAsync(
-                IndexJobKind.Describe, TimeSpan.FromMinutes(_options.StaleJobMinutes), _options.MaxAttempts, cancellationToken: cancellationToken);
+            var (requeued, failed) = await server.RecoverAsync(IndexJobKind.Describe, _options.StaleJobMinutes, _options.MaxAttempts, cancellationToken);
             if (requeued > 0) _logger.LogWarning("Requeued {Count} stale Describe job(s)", requeued);
             if (failed > 0) _logger.LogError("Gave up on {Count} Describe job(s) that stopped the worker {Max} times", failed, _options.MaxAttempts);
         }
 
         protected override async Task<PollResult> PollAsync(CancellationToken cancellationToken)
         {
+            if (!await _outbox.SendAsync(cancellationToken)) return PollResult.Backoff;
+
             using var scope = scopeFactory.CreateScope();
-            var db = scope.ServiceProvider.GetRequiredService<NunamDbContext>();
-            var queue = scope.ServiceProvider.GetRequiredService<JobQueue>();
             var ai = scope.ServiceProvider.GetRequiredService<IAIInferenceService>();
 
-            var jobs = await queue.ClaimAsync(IndexJobKind.Describe, _options.DescribeBatchSize, cancellationToken: cancellationToken);
+            var jobs = await server.ClaimAsync(IndexJobKind.Describe, _options.DescribeBatchSize, 0, cancellationToken);
             if (jobs.Count == 0)
             {
                 return PollResult.NoWork;
@@ -58,32 +56,15 @@ namespace Nunam.AIWorker.Workers
                 var job = jobs[i];
                 try
                 {
-                    var file = await db.Files.FirstOrDefaultAsync(
-                        f => f.MachineId == job.MachineId && f.Path == job.Path, cancellationToken);
-
-                    if (file is null)
+                    if (job.PreviewImage is not { Length: > 0 } preview)
                     {
-                        Fail(job, "No matching IndexedFile for this job.");
+                        _outbox.Add(Result(job, JobOutcome.Failed, "File has no preview image to describe.", queueEmbed: true));
                         continue;
                     }
 
-                    if (file.PreviewImage is null || file.PreviewImage.Length == 0)
-                    {
-                        Fail(job, "File has no preview image to describe.");
-                        queue.Enqueue(job.MachineId, job.Path, IndexJobKind.Embed);
-                        continue;
-                    }
-
-                    var mediaType = MediaTypes.Detect(
-                        file.PreviewImage, file.Extension ?? Path.GetExtension(file.FileName));
-
-                    file.Description = await ai.DescribeImageAsync(
-                        file.PreviewImage, mediaType, cancellationToken: cancellationToken);
-
-                    job.Status = IndexJobStatus.Done;
-                    job.Stage = IndexJobStage.Describe;
-                    job.Error = null;
-                    queue.Enqueue(job.MachineId, job.Path, IndexJobKind.Embed);
+                    var mediaType = MediaTypes.Detect(preview, job.Extension ?? Path.GetExtension(job.FileName));
+                    var description = await ai.DescribeImageAsync(preview, mediaType, cancellationToken: cancellationToken);
+                    _outbox.Add(new WorkerJobResult(job.Id, JobOutcome.Done, null, description, null, QueueEmbed: true));
                 }
                 catch (Exception ex)
                 {
@@ -98,36 +79,33 @@ namespace Nunam.AIWorker.Workers
                         }
                         for (var j = i; j < jobs.Count; j++)
                         {
-                            jobs[j].ReturnToQueue();
+                            _outbox.Add(Result(jobs[j], JobOutcome.Returned));
                         }
                         backendDown = failure is BackendFailure.Outage;
                         break;
                     }
 
-                    if (failure is BackendFailure.JobFailed && job.RetryOrFail(_options.MaxAttempts, ex.Message))
+                    if (failure is BackendFailure.JobFailed && job.Attempts < _options.MaxAttempts)
                     {
                         _logger.LogWarning(ex, "Describing {Path} failed (attempt {Attempt} of {Max}); will retry",
                             job.Path, job.Attempts, _options.MaxAttempts);
+                        _outbox.Add(Result(job, JobOutcome.Retry));
                         continue;
                     }
 
                     // The model rejected this image, or kept failing on it: embed the file without a description.
                     _logger.LogError(ex, "Describe job {JobId} failed", job.Id);
-                    Fail(job, ex.Message);
-                    queue.Enqueue(job.MachineId, job.Path, IndexJobKind.Embed);
+                    _outbox.Add(Result(job, JobOutcome.Failed, ex.Message, queueEmbed: true));
                 }
             }
 
-            // Not cancellable: on shutdown the results (and jobs returned to Pending) must still land,
-            // otherwise the claimed rows sit in Processing until stale recovery picks them up.
-            await db.SaveChangesAsync(CancellationToken.None);
+            // Not cancellable: on shutdown the results (and jobs returned to the queue) must still land,
+            // otherwise the claimed jobs sit in Processing until stale recovery picks them up.
+            if (!await _outbox.SendAsync(CancellationToken.None)) return PollResult.Backoff;
             return backendDown ? PollResult.Backoff : PollResult.DidWork;
         }
 
-        private static void Fail(IndexJob job, string error)
-        {
-            job.Status = IndexJobStatus.Failed;
-            job.Error = Truncate(error, 2000);
-        }
+        private static WorkerJobResult Result(WorkerJob job, JobOutcome outcome, string? error = null, bool queueEmbed = false) =>
+            new(job.Id, outcome, error is null ? null : Truncate(error, 2000), null, null, queueEmbed);
     }
 }

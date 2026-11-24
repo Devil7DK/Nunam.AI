@@ -34,8 +34,5 @@ namespace Nunam.AIWorker
 
         /// <summary>Claims per job before a job that keeps stopping the worker is failed.</summary>
         public int MaxAttempts { get; set; } = 3;
-
-        /// <summary>Finished jobs are deleted this many days after completing.</summary>
-        public int KeepDoneJobsDays { get; set; } = 7;
     }
 }
