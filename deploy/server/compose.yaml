@@ -31,7 +31,7 @@ services:
 
   # Applies the schema as the owner, then exits; the API and AI worker wait for it.
   migrations:
-    image: ${NUNAM_REGISTRY}/nunam/nunam-migrations:${NUNAM_TAG}
+    image: ${NUNAM_REGISTRY}/nunam-migrations:${NUNAM_TAG}
     container_name: nunam_migrations
     restart: 'no'
     environment:
@@ -41,7 +41,7 @@ services:
         condition: service_healthy
 
   nunam-api:
-    image: ${NUNAM_REGISTRY}/nunam/nunam-api:${NUNAM_TAG}
+    image: ${NUNAM_REGISTRY}/nunam-api:${NUNAM_TAG}
     container_name: nunam_api
     restart: unless-stopped
     environment:
@@ -62,7 +62,7 @@ services:
         condition: service_completed_successfully
 
   nunam-ui:
-    image: ${NUNAM_REGISTRY}/nunam/nunam-ui:${NUNAM_TAG}
+    image: ${NUNAM_REGISTRY}/nunam-ui:${NUNAM_TAG}
     container_name: nunam_ui
     restart: unless-stopped
     ports:
@@ -80,7 +80,7 @@ services:
       - nunam-api
 
   nunam-aiworker:
-    image: ${NUNAM_REGISTRY}/nunam/nunam-aiworker:${NUNAM_TAG}
+    image: ${NUNAM_REGISTRY}/nunam-aiworker:${NUNAM_TAG}
     container_name: nunam_aiworker
     restart: unless-stopped
     environment:

@@ -22,6 +22,8 @@ docker compose up -d
 docker compose logs nunam-api | grep "setup code"
 ```
 
+The images come from GitHub Packages (`ghcr.io/devil7dk/nunam-*`), built by the repository's *Images* workflow on every push to `master`. While the repository is private they are private too: first `docker login ghcr.io -u Devil7DK` with a personal access token (classic) that has only `read:packages`.
+
 Open `https://<this machine>:3443`, accept the self-signed certificate, and enter the setup code with a user name and password; that account is the first admin. The code works only while there are no accounts.
 
 The `postgres/` scripts run once, when the data volume is created: `10-roles.sh` makes the API's login from its password in `.env`, and `20-tls.sh` makes the self-signed certificate Postgres requires for TCP logins. Changing those passwords in `.env` later does not change them in the database.
