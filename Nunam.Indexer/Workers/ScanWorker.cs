@@ -1,28 +1,27 @@
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
-using Nunam.Core.Data;
-using Nunam.Core.Jobs;
+using Nunam.Core.Agents;
 using Nunam.Indexer.Indexing;
 using Nunam.Indexer.Management;
+using Nunam.Indexer.Server;
 
 namespace Nunam.Indexer.Workers
 {
     /// <summary>
-    /// One-shot startup crawl of every configured watch path: enqueues a Parse job for each file
-    /// that is new or has changed since it was last indexed (by size + modified time), then drops
-    /// entries for files deleted while the indexer wasn't watching and for files the configuration no
-    /// longer covers. Unchanged files and paths that already have a pending Parse job are skipped,
-    /// so restarts are cheap.
+    /// One-shot startup crawl of every configured watch path: sends what it finds to the server in
+    /// batches, which queues a Parse job for each file that is new or changed since it was last indexed
+    /// (by size + modified time), then drops entries for files deleted while the indexer wasn't
+    /// watching and for files the configuration no longer covers. Restarts are cheap: unchanged files
+    /// are only compared.
     /// </summary>
     public class ScanWorker(
-        IServiceScopeFactory scopeFactory,
-        MachineContext machine,
+        IndexerServer server,
         FileTree fileTree,
         IndexScope indexScope,
         IndexerControl control,
         IOptions<IndexerOptions> options,
         ILogger<ScanWorker> logger) : BackgroundService
     {
+        private const int BatchSize = 500;
         private readonly IndexerOptions _options = options.Value;
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -59,16 +58,17 @@ namespace Nunam.Indexer.Workers
         private async Task<int> ScanRootAsync(string root, CancellationToken cancellationToken)
         {
             var enqueued = 0;
+            var batch = new List<ObservedFile>(BatchSize);
 
             foreach (var path in fileTree.EnumerateFiles(root))
             {
                 if (cancellationToken.IsCancellationRequested) break;
 
-                FileInfo info;
                 try
                 {
-                    info = new FileInfo(path);
+                    var info = new FileInfo(path);
                     if (!info.Exists) continue;
+                    batch.Add(new ObservedFile(path, info.Length, info.LastWriteTimeUtc));
                 }
                 catch (Exception ex)
                 {
@@ -76,26 +76,17 @@ namespace Nunam.Indexer.Workers
                     continue;
                 }
 
-                using var scope = scopeFactory.CreateScope();
-                var db = scope.ServiceProvider.GetRequiredService<NunamDbContext>();
-                var queue = scope.ServiceProvider.GetRequiredService<JobQueue>();
-
-                var existing = await db.Files
-                    .Where(f => f.MachineId == machine.MachineId && f.Path == path)
-                    .Select(f => new { f.SizeBytes, f.FileModifiedAt })
-                    .FirstOrDefaultAsync(cancellationToken);
-
-                if (existing is not null && IsUnchanged(existing.SizeBytes, existing.FileModifiedAt, info))
+                if (batch.Count == BatchSize)
                 {
-                    continue;
-                }
-
-                if (await queue.EnqueueParseIfAbsentAsync(machine.MachineId, path, cancellationToken))
-                {
-                    enqueued++;
+                    enqueued += await server.ScanAsync(batch, cancellationToken);
+                    batch.Clear();
                 }
             }
 
+            if (batch.Count > 0 && !cancellationToken.IsCancellationRequested)
+            {
+                enqueued += await server.ScanAsync(batch, cancellationToken);
+            }
             return enqueued;
         }
 
@@ -106,37 +97,43 @@ namespace Nunam.Indexer.Workers
         /// </summary>
         private async Task<(int Missing, int OutOfScope)> RemoveStaleAsync(CancellationToken cancellationToken)
         {
-            using var scope = scopeFactory.CreateScope();
-            var db = scope.ServiceProvider.GetRequiredService<NunamDbContext>();
-
-            var indexed = await db.Files
-                .Where(f => f.MachineId == machine.MachineId)
-                .Select(f => f.Path)
-                .ToListAsync(cancellationToken);
-
-            int missing = 0, outOfScope = 0;
-            foreach (var path in indexed)
+            var missing = new List<string>();
+            var outOfScope = new List<string>();
+            string? after = null;
+            do
             {
-                if (cancellationToken.IsCancellationRequested) break;
-                if (indexScope.IsUnderUnavailableRoot(path)) continue;
+                var page = await server.ListPathsAsync(after, 2000, cancellationToken);
+                foreach (var path in page.Paths)
+                {
+                    if (indexScope.IsUnderUnavailableRoot(path)) continue;
 
-                if (!indexScope.Allows(path, out var reason))
-                {
-                    logger.LogDebug("Removing {Path} from the index: {Reason}", path, reason);
-                    outOfScope += await IndexRemover.RemoveAsync(db, machine.MachineId, path, cancellationToken);
+                    if (!indexScope.Allows(path, out var reason))
+                    {
+                        logger.LogDebug("Removing {Path} from the index: {Reason}", path, reason);
+                        outOfScope.Add(path);
+                    }
+                    else if (!File.Exists(path))
+                    {
+                        missing.Add(path);
+                    }
                 }
-                else if (!File.Exists(path))
-                {
-                    missing += await IndexRemover.RemoveAsync(db, machine.MachineId, path, cancellationToken);
-                }
+                after = page.Next;
             }
+            while (after is not null && !cancellationToken.IsCancellationRequested);
 
-            return (missing, outOfScope);
+            // Removed after paging, so the pages don't shift under the cursor.
+            return (await RemoveAsync(missing, cancellationToken), await RemoveAsync(outOfScope, cancellationToken));
         }
 
-        private static bool IsUnchanged(long? indexedSize, DateTimeOffset? indexedModified, FileInfo info) =>
-            indexedSize == info.Length
-            && indexedModified is not null
-            && Math.Abs((indexedModified.Value - info.LastWriteTimeUtc).TotalSeconds) < 2;
+        private async Task<int> RemoveAsync(List<string> paths, CancellationToken cancellationToken)
+        {
+            var removed = 0;
+            foreach (var chunk in paths.Chunk(BatchSize))
+            {
+                if (cancellationToken.IsCancellationRequested) break;
+                removed += await server.RemoveAsync([.. chunk], cancellationToken);
+            }
+            return removed;
+        }
     }
 }

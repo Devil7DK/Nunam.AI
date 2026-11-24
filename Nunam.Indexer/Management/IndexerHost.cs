@@ -1,11 +1,9 @@
-using Microsoft.EntityFrameworkCore;
-using Nunam.Core.Data;
-using Nunam.Core.Jobs;
 using Nunam.Core.Management;
 using Nunam.Indexer.Indexing;
 using Nunam.Indexer.Abstractions;
 using Nunam.Indexer.Parsing;
 using Nunam.Indexer.Providers;
+using Nunam.Indexer.Server;
 using Nunam.Indexer.Workers;
 
 namespace Nunam.Indexer.Management
@@ -18,7 +16,8 @@ namespace Nunam.Indexer.Management
     public static class IndexerHost
     {
         public static IHost Build(
-            IConfiguration configuration, ILoggerFactory loggerFactory, IndexerControl control, RemoteIndexerSettings? remote)
+            IConfiguration configuration, ILoggerFactory loggerFactory, IndexerControl control, IndexerServer server,
+            RemoteIndexerSettings? remote)
         {
             var builder = Host.CreateEmptyApplicationBuilder(new HostApplicationBuilderSettings
             {
@@ -30,6 +29,7 @@ namespace Nunam.Indexer.Management
             builder.Services.AddSingleton(loggerFactory);
             builder.Services.AddSingleton<IHostLifetime, SupervisedLifetime>();
             builder.Services.AddSingleton(control);
+            builder.Services.AddSingleton(server);
 
             builder.Services.Configure<IndexerOptions>(builder.Configuration.GetSection(IndexerOptions.SectionName));
             if (remote is not null) builder.Services.PostConfigure<IndexerOptions>(remote.ApplyTo);
@@ -38,12 +38,6 @@ namespace Nunam.Indexer.Management
             // look like two files.
             builder.Services.PostConfigure<IndexerOptions>(o =>
                 o.WatchPaths = [.. o.WatchPaths.Select(p => Path.GetFullPath(p))]);
-
-            builder.Services.AddDbContext<NunamDbContext>(opt =>
-                opt.UseNpgsql(
-                    builder.Configuration.GetConnectionString("Postgres"),
-                    npg => npg.UseVector()));
-            builder.Services.AddScoped<JobQueue>();
 
             builder.Services.AddSingleton<MachineContext>();
             builder.Services.AddSingleton<PathFilter>();

@@ -1,18 +1,17 @@
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
-using Nunam.Core.Data;
-using Nunam.Core.Entities;
+using Nunam.Core.Agents;
 using Nunam.Indexer.Management;
+using Nunam.Indexer.Server;
 
 namespace Nunam.Indexer.Indexing
 {
     /// <summary>
-    /// Upserts this host's <see cref="Machine"/> row and stamps <see cref="MachineContext"/> at
-    /// startup. Registered as the first hosted service so its awaited <see cref="StartAsync"/>
-    /// completes — and <c>MachineContext</c> is populated — before the scan/watch/parse workers begin.
+    /// Tells the server this machine's hostname and name, and stamps <see cref="MachineContext"/>.
+    /// Registered as the first hosted service so its awaited <see cref="StartAsync"/> completes before
+    /// the scan/watch/parse workers begin.
     /// </summary>
     public class MachineInitializer(
-        IServiceScopeFactory scopeFactory,
+        IndexerServer server,
         MachineContext context,
         IndexerControl control,
         IOptions<IndexerOptions> options,
@@ -23,40 +22,12 @@ namespace Nunam.Indexer.Indexing
         public async Task StartAsync(CancellationToken cancellationToken)
         {
             var hostname = Environment.MachineName;
-            var name = string.IsNullOrWhiteSpace(_options.MachineName) ? hostname : _options.MachineName!;
+            var name = string.IsNullOrWhiteSpace(_options.MachineName) ? null : _options.MachineName.Trim();
+            var machine = await server.HelloAsync(new IndexerHelloRequest(hostname, name), cancellationToken);
 
-            using var scope = scopeFactory.CreateScope();
-            var db = scope.ServiceProvider.GetRequiredService<NunamDbContext>();
-
-            var machine = await db.Machines.FirstOrDefaultAsync(m => m.Hostname == hostname, cancellationToken);
-            if (machine is null)
-            {
-                machine = new Machine { Name = name, Hostname = hostname, LastSeen = DateTimeOffset.UtcNow };
-                db.Machines.Add(machine);
-                logger.LogInformation("Registered new machine {Name} ({Hostname})", name, hostname);
-            }
-            else
-            {
-                machine.Name = name;
-                machine.LastSeen = DateTimeOffset.UtcNow;
-            }
-
-            try
-            {
-                await db.SaveChangesAsync(cancellationToken);
-            }
-            catch (DbUpdateException ex) when (ex.InnerException is Npgsql.PostgresException { SqlState: Npgsql.PostgresErrorCodes.UniqueViolation })
-            {
-                // Row-level security hides machines registered by other logins, so the lookup above missed it.
-                logger.LogCritical("Machine {Hostname} is already registered under another database login. "
-                    + "Use that machine's login, or have an admin delete the old machine entry", hostname);
-                throw;
-            }
-
-            context.Set(machine.Id, machine.Name, hostname);
-            control.MachineId = machine.Id;
-
-            logger.LogInformation("Machine identity resolved: {MachineId}", machine.Id);
+            context.Set(machine.MachineId, machine.Name, hostname);
+            control.MachineId = machine.MachineId;
+            logger.LogInformation("Signed in to the server as machine {Name} ({MachineId})", machine.Name, machine.MachineId);
         }
 
         public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;

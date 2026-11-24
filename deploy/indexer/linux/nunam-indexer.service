@@ -14,7 +14,7 @@ Restart=on-failure
 RestartSec=30
 Environment=DOTNET_ENVIRONMENT=Production
 
-# Sandbox: the indexer only reads files and talks to Postgres. It sees the filesystem read-only
+# Sandbox: the indexer only reads files and talks to the Nunam server. It sees the filesystem read-only
 # (watch paths under /home included) and writes only to its private /tmp (video frames).
 NoNewPrivileges=yes
 ProtectSystem=strict

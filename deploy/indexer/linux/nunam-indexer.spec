@@ -19,7 +19,7 @@ Recommends:     tesseract tesseract-langpack-eng /usr/bin/ffmpeg acl
 
 %description
 Runs on a machine with files: scans and watches its folders, parses documents, images, audio and
-video, and writes what it finds to the Nunam database on the homelab.
+video, and sends what it finds to the Nunam server.
 
 %install
 cp -a %{tree}/. %{buildroot}/

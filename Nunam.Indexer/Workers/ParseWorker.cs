@@ -1,7 +1,7 @@
+using System.Net;
 using System.Text.Json;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
-using Nunam.Core.Data;
+using Nunam.Core.Agents;
 using Nunam.Core.Entities;
 using Nunam.Core.Jobs;
 using Nunam.Indexer.Abstractions;
@@ -9,19 +9,19 @@ using Nunam.Indexer.Indexing;
 using Nunam.Indexer.Management;
 using Nunam.Indexer.Parsing;
 using Nunam.Indexer.Providers;
+using Nunam.Indexer.Server;
 
 namespace Nunam.Indexer.Workers
 {
     /// <summary>
     /// Consumes this machine's <see cref="IndexJobKind.Parse"/> jobs: detects the file type, runs the
-    /// parsers configured for it until one reads it, upserts the <see cref="IndexedFile"/>, and enqueues the follow-up AI job when
-    /// its input changed — a Describe for a new preview image (the DescribeWorker enqueues the Embed
-    /// after it), otherwise an Embed. Pending Embed/Describe jobs for the path are cleared first so a
-    /// re-parse doesn't pile up duplicates.
+    /// parsers configured for it until one reads it, and sends the result to the server, which stores
+    /// the file and queues the AI job its new content needs.
     /// </summary>
     public class ParseWorker(
-        IServiceScopeFactory scopeFactory,
-        MachineContext machine,
+        IndexerServer server,
+        FileTypeDetector detector,
+        ProviderRegistry providers,
         IndexScope scope,
         IndexerControl control,
         IOptions<IndexerOptions> options,
@@ -30,6 +30,9 @@ namespace Nunam.Indexer.Workers
         private readonly IndexerOptions _options = options.Value;
         private readonly ILogger<ParseWorker> _logger = logger;
 
+        /// <summary>Results the server didn't take yet; sent before anything new is claimed.</summary>
+        private readonly Queue<(Guid JobId, string Path, ParseResult Result)> _unsent = new();
+
         protected override string Name => nameof(ParseWorker);
         protected override TimeSpan IdleInterval => TimeSpan.FromSeconds(_options.IdlePollSeconds);
         protected override TimeSpan MinBackoff => TimeSpan.FromSeconds(_options.MinBackoffSeconds);
@@ -37,25 +40,17 @@ namespace Nunam.Indexer.Workers
 
         protected override async Task RecoverStaleAsync(CancellationToken cancellationToken)
         {
-            using var scope = scopeFactory.CreateScope();
-            var queue = scope.ServiceProvider.GetRequiredService<JobQueue>();
-            var (requeued, failed) = await queue.RecoverStaleAsync(
-                IndexJobKind.Parse, TimeSpan.FromMinutes(_options.StaleJobMinutes), _options.MaxAttempts, machine.MachineId, cancellationToken);
+            var (requeued, failed) = await server.RecoverParseJobsAsync(_options.StaleJobMinutes, _options.MaxAttempts, cancellationToken);
             if (requeued > 0) _logger.LogWarning("Requeued {Count} stale Parse job(s)", requeued);
             if (failed > 0) _logger.LogError("Gave up on {Count} Parse job(s) that stopped the worker {Max} times", failed, _options.MaxAttempts);
         }
 
         protected override async Task<PollResult> PollAsync(CancellationToken cancellationToken)
         {
+            if (!await SendUnsentAsync(cancellationToken)) return PollResult.Backoff;
             if (control.Paused) return PollResult.NoWork;
 
-            using var scope = scopeFactory.CreateScope();
-            var db = scope.ServiceProvider.GetRequiredService<NunamDbContext>();
-            var queue = scope.ServiceProvider.GetRequiredService<JobQueue>();
-            var detector = scope.ServiceProvider.GetRequiredService<FileTypeDetector>();
-            var providers = scope.ServiceProvider.GetRequiredService<ProviderRegistry>();
-
-            var jobs = await queue.ClaimAsync(IndexJobKind.Parse, _options.ParseBatchSize, machine.MachineId, cancellationToken);
+            var jobs = await server.ClaimParseJobsAsync(_options.ParseBatchSize, cancellationToken);
             if (jobs.Count == 0)
             {
                 return PollResult.NoWork;
@@ -63,102 +58,106 @@ namespace Nunam.Indexer.Workers
 
             foreach (var job in jobs)
             {
+                ParseResult result;
                 if (cancellationToken.IsCancellationRequested)
                 {
-                    ReturnUnfinished(job);
-                    continue;
+                    result = Returned();
                 }
-
-                using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                deadline.CancelAfter(TimeSpan.FromSeconds(_options.ParseTimeoutSeconds));
-                try
+                else
                 {
-                    await ProcessAsync(db, queue, detector, providers, job, deadline.Token);
+                    var stage = new StageTracker();
+                    using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                    deadline.CancelAfter(TimeSpan.FromSeconds(_options.ParseTimeoutSeconds));
+                    try
+                    {
+                        result = await ProcessAsync(job, stage, deadline.Token);
+                    }
+                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                    {
+                        result = Returned();
+                    }
+                    catch (OperationCanceledException) when (deadline.IsCancellationRequested)
+                    {
+                        _logger.LogWarning("Parsing {Path} took longer than {Seconds}s; giving up on it", job.Path, _options.ParseTimeoutSeconds);
+                        result = Failed(stage.Stage, $"Parsing took longer than {_options.ParseTimeoutSeconds} seconds.");
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Parse job {JobId} for {Path} failed", job.Id, job.Path);
+                        result = Failed(stage.Stage, ex.Message);
+                    }
                 }
-                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-                {
-                    ReturnUnfinished(job);
-                }
-                catch (OperationCanceledException) when (deadline.IsCancellationRequested)
-                {
-                    _logger.LogWarning("Parsing {Path} took longer than {Seconds}s; giving up on it", job.Path, _options.ParseTimeoutSeconds);
-                    Fail(job, $"Parsing took longer than {_options.ParseTimeoutSeconds} seconds.");
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Parse job {JobId} for {Path} failed", job.Id, job.Path);
-                    Fail(job, ex.Message);
-                }
+                _unsent.Enqueue((job.Id, job.Path, result));
             }
 
             // Not cancellable: finished parses must land even when shutdown starts mid-batch.
-            await db.SaveChangesAsync(CancellationToken.None);
-            return PollResult.DidWork;
+            return await SendUnsentAsync(CancellationToken.None) ? PollResult.DidWork : PollResult.Backoff;
         }
 
-        private async Task ProcessAsync(
-            NunamDbContext db, JobQueue queue, FileTypeDetector detector, ProviderRegistry providers,
-            IndexJob job, CancellationToken cancellationToken)
+        /// <summary>Returns false while the server can't be reached; what's left is kept for the next poll.</summary>
+        private async Task<bool> SendUnsentAsync(CancellationToken cancellationToken)
         {
-            job.Stage = IndexJobStage.Detect;
+            while (_unsent.TryPeek(out var item))
+            {
+                try
+                {
+                    await server.CompleteParseJobAsync(item.JobId, item.Result, cancellationToken);
+                }
+                catch (HttpRequestException ex) when (ex.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Conflict)
+                {
+                    _logger.LogInformation("The server no longer holds the job for {Path} for this indexer; dropping its result", item.Path);
+                }
+                catch (HttpRequestException ex) when (ex.StatusCode is HttpStatusCode.BadRequest or HttpStatusCode.RequestEntityTooLarge
+                    && item.Result.Outcome == JobOutcome.Done)
+                {
+                    _logger.LogError(ex, "The server refused the parse result for {Path}", item.Path);
+                    _unsent.Dequeue();
+                    _unsent.Enqueue((item.JobId, item.Path, Failed(IndexJobStage.Upsert, "The server refused the result: " + ex.Message)));
+                    continue;
+                }
+                catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException && !cancellationToken.IsCancellationRequested)
+                {
+                    _logger.LogWarning(ex, "Could not send {Count} parse result(s) to the server; will retry", _unsent.Count);
+                    return false;
+                }
+                _unsent.Dequeue();
+            }
+            return true;
+        }
+
+        private async Task<ParseResult> ProcessAsync(ClaimedParseJob job, StageTracker stage, CancellationToken cancellationToken)
+        {
+            stage.Stage = IndexJobStage.Detect;
 
             if (!scope.Allows(job.Path, out var reason))
             {
-                Fail(job, reason);
-                return;
+                return Failed(stage.Stage, reason);
             }
 
             var info = new FileInfo(job.Path);
             if (!info.Exists)
             {
-                Fail(job, "File no longer exists.");
-                return;
+                return Failed(stage.Stage, "File no longer exists.");
             }
 
             var fileType = detector.Detect(info);
 
-            job.Stage = IndexJobStage.Parse;
+            stage.Stage = IndexJobStage.Parse;
             var (outcome, parserName) = await ParseAsync(providers, info, (FileKind)fileType, cancellationToken);
 
-            job.Stage = IndexJobStage.Upsert;
-            var file = await db.Files.FirstOrDefaultAsync(
-                f => f.MachineId == job.MachineId && f.Path == job.Path, cancellationToken);
-
-            if (file is null)
-            {
-                file = new IndexedFile { MachineId = job.MachineId, Path = job.Path };
-                db.Files.Add(file);
-            }
-
+            stage.Stage = IndexJobStage.Upsert;
             var content = CleanContent(outcome.Content);
-            var followUp = FollowUpFor(file, info.Name, content, outcome);
-
-            file.FileName = info.Name;
-            file.Extension = info.Extension;
-            file.SizeBytes = info.Length;
-            file.FileType = fileType;
-            file.FileCreatedAt = info.CreationTimeUtc;
-            file.FileModifiedAt = info.LastWriteTimeUtc;
-            file.IndexedAt = DateTimeOffset.UtcNow;
-            file.Content = content;
-            file.Metadata = outcome.Metadata is { Count: > 0 } metadata ? JsonSerializer.Serialize(metadata) : null;
-            file.PreviewImage = outcome.PreviewImage;
-            if (!outcome.NeedsDescribe)
-            {
-                file.Description = null; // nothing will be described any more; drop a stale one
-            }
-
-            if (followUp is { } kind)
-            {
-                await EnqueueFollowUpAsync(db, queue, job, kind, cancellationToken);
-            }
-
-            job.Status = IndexJobStatus.Done;
-            job.Error = null;
+            var file = new ParsedFile(
+                info.Name, info.Extension, info.Length, fileType, info.CreationTimeUtc, info.LastWriteTimeUtc,
+                content,
+                outcome.Metadata is { Count: > 0 } metadata ? JsonSerializer.Serialize(metadata) : null,
+                outcome.PreviewImage,
+                outcome.NeedsDescribe);
 
             _logger.LogInformation(
-                "Parsed {Path} with {Parser} (type={Type}, content={ContentLen} chars, preview={HasPreview}, follow-up={FollowUp})",
-                job.Path, parserName, fileType, outcome.Content?.Length ?? 0, outcome.PreviewImage is not null, followUp?.ToString() ?? "none");
+                "Parsed {Path} with {Parser} (type={Type}, content={ContentLen} chars, preview={HasPreview})",
+                job.Path, parserName, fileType, outcome.Content?.Length ?? 0, outcome.PreviewImage is not null);
+            return new ParseResult(JobOutcome.Done, stage.Stage, null, file);
         }
 
         /// <summary>
@@ -199,60 +198,20 @@ namespace Nunam.Indexer.Workers
             throw firstError ?? new InvalidOperationException("No parser read the file.");
         }
 
-        /// <summary>
-        /// The AI job the new parse needs, judged against the row before it is overwritten. A file saved
-        /// again without changes (or only touched) keeps its description and embedding, which cost GPU
-        /// time to redo.
-        /// </summary>
-        private static IndexJobKind? FollowUpFor(IndexedFile file, string fileName, string? content, ParseOutcome outcome)
-        {
-            if (outcome.NeedsDescribe)
-            {
-                var samePreview = file.PreviewImage is not null && outcome.PreviewImage is not null
-                    && file.PreviewImage.AsSpan().SequenceEqual(outcome.PreviewImage);
-                if (file.Description is null || !samePreview) return IndexJobKind.Describe;
-            }
-
-            var embedInputChanged = file.FileName != fileName
-                || file.Content != content
-                || (!outcome.NeedsDescribe && file.Description is not null);
-            return file.Embedding is null || embedInputChanged ? IndexJobKind.Embed : null;
-        }
-
-        /// <summary>
-        /// Replaces any pending Embed/Describe jobs for this path with the one follow-up the new parse
-        /// needs. Jobs already <c>Processing</c> are left alone: the AIWorker holds them and would fail
-        /// its whole batch saving a deleted row. They finish against the old content, and the newer
-        /// job queued here runs after them and overwrites the result.
-        /// </summary>
-        private static async Task EnqueueFollowUpAsync(
-            NunamDbContext db, JobQueue queue, IndexJob job, IndexJobKind kind, CancellationToken cancellationToken)
-        {
-            await db.IndexJobs
-                .Where(j => j.MachineId == job.MachineId
-                    && j.Path == job.Path
-                    && (j.Kind == IndexJobKind.Embed || j.Kind == IndexJobKind.Describe)
-                    && j.Status == IndexJobStatus.Pending)
-                .ExecuteDeleteAsync(cancellationToken);
-
-            queue.Enqueue(job.MachineId, job.Path, kind);
-        }
-
         /// <summary>Postgres text rejects NUL, and the full-text trigger rejects oversized content.</summary>
         private string? CleanContent(string? content) =>
             string.IsNullOrWhiteSpace(content) ? null : Truncate(content.Replace("\0", string.Empty), _options.MaxContentChars);
 
         /// <summary>Shutdown isn't the file's fault: the job goes back without using up an attempt.</summary>
-        private static void ReturnUnfinished(IndexJob job)
-        {
-            job.Status = IndexJobStatus.Pending;
-            job.Attempts = Math.Max(0, job.Attempts - 1);
-        }
+        private static ParseResult Returned() => new(JobOutcome.Returned, IndexJobStage.None, null, null);
 
-        private static void Fail(IndexJob job, string error)
+        private static ParseResult Failed(IndexJobStage stage, string error) =>
+            new(JobOutcome.Failed, stage, Truncate(error, 2000), null);
+
+        /// <summary>How far a parse got, for the job's record when it fails.</summary>
+        private sealed class StageTracker
         {
-            job.Status = IndexJobStatus.Failed;
-            job.Error = Truncate(error, 2000);
+            public IndexJobStage Stage { get; set; } = IndexJobStage.None;
         }
     }
 }

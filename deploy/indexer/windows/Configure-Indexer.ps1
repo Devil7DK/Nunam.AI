@@ -3,9 +3,10 @@
     Sets up the Nunam Indexer service that the MSI installed, and starts it.
 
 .DESCRIPTION
-    Start menu > Configure Nunam Indexer runs it. It opens appsettings.Local.json in Notepad while the
-    connection string is still the template's; once that is filled in, it grants the service account
-    read access to each watch path and (re)starts the service. Run it again after changing the watch
+    Start menu > Configure Nunam Indexer runs it, and so does the install command from the web UI once
+    the machine is connected to the server. It grants the service account read access to each watch
+    path, those set in the web UI included, and (re)starts the service. Without watch paths or remote
+    management it opens appsettings.Local.json in Notepad first. Run it again after changing the watch
     paths, or to change the account the service runs as. The installer runs it with -Register and
     -Unattended after every install and upgrade.
 
@@ -21,7 +22,7 @@
 
 .PARAMETER Unattended
     Never prompt or open Notepad, keep the service's account unless -Account is given, and leave the
-    service stopped while the settings are the template's.
+    service stopped while the machine isn't connected to a server.
 
 .PARAMETER Register
     Create the service, or point it at this folder. The installer runs this.
@@ -241,7 +242,7 @@ if ($Account) {
     $askPassword = $choice.Password
 }
 
-# The file holds the database password: only Administrators, SYSTEM and the
+# The file holds the machine's token: only Administrators, SYSTEM and the
 # service may read it. A fresh ACL, because a file copied in from elsewhere keeps explicit grants that
 # dropping inheritance leaves behind. Set before the file is filled in, so the secrets never sit in a readable file.
 $acl = New-Object System.Security.AccessControl.FileSecurity
@@ -254,9 +255,12 @@ if ($Account -ne "LocalSystem") {
 }
 Set-Acl $settingsPath $acl
 
-$isTemplate = { (Get-Content $settingsPath -Raw | ConvertFrom-Json).ConnectionStrings.Postgres -like "Paste the line*" }
-if ((& $isTemplate) -and -not $Unattended) {
-    Write-Host "Fill in the connection string, license key and watch paths, then save and close Notepad."
+$readSettings = { Get-Content $settingsPath -Raw | ConvertFrom-Json }
+$notEnrolled = { -not (& $readSettings).Server.Token }
+$settings = & $readSettings
+if (-not (& $notEnrolled) -and -not $Unattended -and -not $settings.Indexer.RemoteManagement -and
+    -not @($settings.Indexer.WatchPaths | Where-Object { $_ }).Count) {
+    Write-Host "Add the folders to index under WatchPaths, then save and close Notepad."
     Start-Process notepad.exe -ArgumentList "`"$settingsPath`"" -Wait
 }
 
@@ -283,13 +287,16 @@ if (-not [System.Diagnostics.EventLog]::SourceExists($serviceName)) {
     New-EventLog -LogName Application -Source $serviceName
 }
 
-if (& $isTemplate) {
-    Finish "appsettings.Local.json still has the template's connection string; the service stays stopped."
+if (& $notEnrolled) {
+    Finish "This machine isn't connected to a Nunam server yet; the service stays stopped. In the web UI, open Machines > Add machine and run the command it shows."
 }
 
 # Other accounts read what their user can; granting them other people's profiles would widen that.
 if ($Account -eq $virtualAccount) {
-    $watchPaths = @((Get-Content $settingsPath -Raw | ConvertFrom-Json).Indexer.WatchPaths) | Where-Object { $_ }
+    # The indexer adds the watch paths set in the web UI to the file's own.
+    $ErrorActionPreference = "Continue"
+    $watchPaths = @(& (Join-Path $installDir "Nunam.Indexer.exe") watch-paths) | Where-Object { $_ }
+    $ErrorActionPreference = "Stop"
     foreach ($path in $watchPaths) {
         if (-not (Test-Path -LiteralPath $path -PathType Container)) {
             Write-Warning "Watch path $path not found; once it exists, run Configure Nunam Indexer again to grant $Account read access."

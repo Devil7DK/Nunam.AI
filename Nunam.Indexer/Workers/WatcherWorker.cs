@@ -1,8 +1,7 @@
 using System.Collections.Concurrent;
 using Microsoft.Extensions.Options;
-using Nunam.Core.Data;
-using Nunam.Core.Jobs;
 using Nunam.Indexer.Indexing;
+using Nunam.Indexer.Server;
 
 namespace Nunam.Indexer.Workers
 {
@@ -13,8 +12,7 @@ namespace Nunam.Indexer.Workers
     /// and only acted on once quiet for <see cref="DebounceWindow"/>, judged by what is on disk then.
     /// </summary>
     public class WatcherWorker(
-        IServiceScopeFactory scopeFactory,
-        MachineContext machine,
+        IndexerServer server,
         PathFilter pathFilter,
         FileTree fileTree,
         IndexScope scope,
@@ -22,6 +20,7 @@ namespace Nunam.Indexer.Workers
         ILogger<WatcherWorker> logger) : BackgroundService
     {
         private static readonly TimeSpan DebounceWindow = TimeSpan.FromSeconds(2);
+        private static readonly TimeSpan RetryDelay = TimeSpan.FromSeconds(30);
         private readonly IndexerOptions _options = options.Value;
         private readonly ConcurrentDictionary<string, DateTimeOffset> _pending = new(PathComparer);
 
@@ -85,61 +84,63 @@ namespace Nunam.Indexer.Workers
 
                 if (due.Count == 0) continue;
 
-                using var scope = scopeFactory.CreateScope();
-                var db = scope.ServiceProvider.GetRequiredService<NunamDbContext>();
-                var queue = scope.ServiceProvider.GetRequiredService<JobQueue>();
+                // Dropped from the buffer first; a new event arriving meanwhile re-adds it.
+                foreach (var path in due) _pending.TryRemove(path, out _);
 
-                foreach (var path in due)
+                try
                 {
-                    // Drop from the buffer first; a new event arriving mid-handling re-adds it.
-                    _pending.TryRemove(path, out _);
-
-                    try
-                    {
-                        await HandleAsync(db, queue, path, stoppingToken);
-                    }
-                    catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-                    {
-                        return;
-                    }
-                    catch (Exception ex)
-                    {
-                        logger.LogWarning(ex, "Could not update the index for {Path}; the next scan will catch it", path);
-                    }
+                    await HandleAsync(due, stoppingToken);
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex, "Could not send {Count} change(s) to the server; trying again in {Seconds} s",
+                        due.Count, RetryDelay.TotalSeconds);
+                    foreach (var path in due) _pending.TryAdd(path, DateTimeOffset.UtcNow + RetryDelay - DebounceWindow);
                 }
             }
         }
 
-        private async Task HandleAsync(NunamDbContext db, JobQueue queue, string path, CancellationToken cancellationToken)
+        private async Task HandleAsync(List<string> paths, CancellationToken cancellationToken)
         {
-            var exists = File.Exists(path) || Directory.Exists(path);
-            if (exists && !scope.Allows(path, out var reason))
+            var changed = new List<string>();
+            var removed = new List<string>();
+            foreach (var path in paths)
             {
-                logger.LogDebug("Ignoring change to {Path}: {Reason}", path, reason);
-                return;
+                var exists = File.Exists(path) || Directory.Exists(path);
+                if (exists && !scope.Allows(path, out var reason))
+                {
+                    logger.LogDebug("Ignoring change to {Path}: {Reason}", path, reason);
+                }
+                else if (File.Exists(path))
+                {
+                    changed.Add(path);
+                }
+                else if (Directory.Exists(path))
+                {
+                    // A folder moved or copied in arrives as one event; its files raise none of their own.
+                    var files = fileTree.EnumerateFiles(path).ToList();
+                    changed.AddRange(files);
+                    if (files.Count > 0) logger.LogInformation("Found {Count} file(s) in folder {Path}", files.Count, path);
+                }
+                else
+                {
+                    removed.Add(path);
+                }
             }
 
-            if (File.Exists(path))
+            foreach (var chunk in changed.Chunk(500))
             {
-                if (await queue.EnqueueParseIfAbsentAsync(machine.MachineId, path, cancellationToken))
-                {
-                    logger.LogDebug("Enqueued Parse for changed file {Path}", path);
-                }
+                var queued = await server.EnqueueParseAsync([.. chunk], cancellationToken);
+                logger.LogDebug("Queued {Count} changed file(s) for parsing", queued);
             }
-            else if (Directory.Exists(path))
+            foreach (var chunk in removed.Chunk(500))
             {
-                // A folder moved or copied in arrives as one event; its files raise none of their own.
-                var queued = 0;
-                foreach (var file in fileTree.EnumerateFiles(path))
-                {
-                    if (await queue.EnqueueParseIfAbsentAsync(machine.MachineId, file, cancellationToken)) queued++;
-                }
-                if (queued > 0) logger.LogInformation("Enqueued {Count} file(s) from folder {Path}", queued, path);
-            }
-            else
-            {
-                var removed = await IndexRemover.RemoveAsync(db, machine.MachineId, path, cancellationToken);
-                if (removed > 0) logger.LogInformation("Removed {Count} file(s) under {Path} from the index", removed, path);
+                var count = await server.RemoveAsync([.. chunk], cancellationToken);
+                if (count > 0) logger.LogInformation("Removed {Count} file(s) under {Paths} from the index", count, string.Join(", ", chunk.Take(3)));
             }
         }
 

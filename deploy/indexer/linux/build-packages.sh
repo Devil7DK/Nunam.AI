@@ -58,7 +58,7 @@ Depends: libc6, libgcc-s1, libstdc++6, libssl3t64 | libssl3, zlib1g, libicu76 | 
 Recommends: tesseract-ocr, tesseract-ocr-eng, ffmpeg, acl
 Description: Indexes local files into the Nunam search index
  Runs on a machine with files: scans and watches its folders, parses documents, images, audio and
- video, and writes what it finds to the Nunam database on the homelab.
+ video, and sends what it finds to the Nunam server.
 CONTROL
 docker run --rm --user "$(id -u):$(id -g)" -v "$work:/work:z" -v "$out:/out:z" "$debian_image" \
     dpkg-deb --root-owner-group -Zxz --build /work/root "/out/nunam-indexer_${version}_amd64.deb"

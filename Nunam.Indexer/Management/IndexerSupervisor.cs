@@ -1,11 +1,11 @@
-using Npgsql;
 using Nunam.Core.Management;
+using Nunam.Indexer.Server;
 
 namespace Nunam.Indexer.Management
 {
     /// <summary>
     /// Runs the indexing workers (<see cref="IndexerHost"/>) and starts them again when they ask for a
-    /// restart, when one of them stops, or when they fail to start (the database is down). With remote
+    /// restart, when one of them stops, or when they fail to start (the server is down). With remote
     /// management on, the settings from the UI are read before every start: a scan started on the
     /// local watch paths alone would drop the files of the remote ones from the index.
     /// </summary>
@@ -13,7 +13,7 @@ namespace Nunam.Indexer.Management
         IConfiguration configuration,
         ILoggerFactory loggerFactory,
         IndexerControl control,
-        NpgsqlDataSource dataSource,
+        IndexerServer server,
         ILogger<IndexerSupervisor> logger) : BackgroundService
     {
         private static readonly TimeSpan MinRetry = TimeSpan.FromSeconds(5);
@@ -32,7 +32,7 @@ namespace Nunam.Indexer.Management
                 {
                     var (remote, revision) = remoteManagement ? await ReadRemoteSettingsAsync(stoppingToken) : (null, null);
                     control.BeginRun(remote, revision);
-                    host = IndexerHost.Build(configuration, loggerFactory, control, remote);
+                    host = IndexerHost.Build(configuration, loggerFactory, control, server, remote);
                     await StartAsync(host, stoppingToken);
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -92,16 +92,8 @@ namespace Nunam.Indexer.Management
 
         private async Task<(RemoteIndexerSettings?, int?)> ReadRemoteSettingsAsync(CancellationToken cancellationToken)
         {
-            await using var command = dataSource.CreateCommand("""
-                SELECT s.settings, s.revision FROM indexer_settings s JOIN machines m ON m.id = s.machine_id
-                WHERE m.hostname = $1
-                """);
-            command.Parameters.Add(new() { Value = Environment.MachineName });
-            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-            if (!await reader.ReadAsync(cancellationToken)) return (null, null);
-
-            var settings = RemoteIndexerSettings.FromJson(reader.GetString(0));
-            var revision = reader.GetInt32(1);
+            var (settings, revision) = await server.GetSettingsAsync(cancellationToken);
+            if (settings is null) return (null, revision);
             if (settings.Validate() is { Count: > 0 } problems)
             {
                 logger.LogWarning("Ignoring the settings from the UI (revision {Revision}): {Problems}",

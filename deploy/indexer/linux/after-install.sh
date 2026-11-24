@@ -3,7 +3,7 @@
 set -e
 
 systemd-sysusers /usr/lib/sysusers.d/nunam-indexer.conf
-# The settings hold the database password and license key: readable by the service, not by everyone.
+# The settings hold the machine's token: readable by the service, not by everyone.
 chgrp nunam /etc/nunam-indexer /etc/nunam-indexer/appsettings.Local.json
 chmod 0750 /etc/nunam-indexer
 chmod 0640 /etc/nunam-indexer/appsettings.Local.json
@@ -18,8 +18,8 @@ fi
 
 cat <<'MSG'
 Nunam indexer installed. To start it:
-  1. Fill in /etc/nunam-indexer/appsettings.Local.json and save the database
-     certificate as /etc/nunam-indexer/nunam-db.crt.
+  1. Connect it to the server: in the web UI, open Machines > Add machine and
+     run the command under "Indexer already installed?".
   2. Either run it as yourself, so it reads what you can:
        sudo nunam-indexer-account $USER
      or let the nunam user read each watch path, e.g. for ~/Documents:
