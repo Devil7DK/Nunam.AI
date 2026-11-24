@@ -1,13 +1,25 @@
 # Adding a machine to the index
 
-Each machine with files runs its own `Nunam.Indexer`. It reads files locally and writes straight to the homelab database; nothing is copied off the machine except extracted text, metadata and a scaled-down preview image.
+Each machine with files runs its own `Nunam.Indexer`. It reads files locally and sends what it finds to the server's API; nothing is copied off the machine except extracted text, metadata and a scaled-down preview image.
+
+## The quick way
+
+As an admin, open **Machines** → **Add machine** in the web UI, optionally name the machine, and choose **Get the command**. It shows one command per system:
+
+- **Windows**, in PowerShell opened as administrator: `& ([scriptblock]::Create((irm '<server>/api/agent/install.ps1'))) -Server '<server>' -Code '<code>'`
+- **Linux** (Debian 12 or later, Ubuntu, Fedora): `curl -fsSL '<server>/api/agent/install.sh' | sudo sh -s -- --server '<server>' --code '<code>'`
+
+Run it on the machine. It downloads the indexer from the server, installs it, trades the one-time code for the machine's own token, asks which account the service runs as (see below) and starts it. The dialog notices when the machine connects. With **Manage it from here** ticked (the default), set its watch paths on the machine's *Settings* tab; otherwise in `appsettings.Local.json` on the machine.
+
+The code works once, for an hour. The command downloads the newest package the server has ([indexer packages](deployment.md)); if it has none, use the command under *Indexer already installed?* after installing the package by hand, as below.
+
+**Reconnect** on a machine's page does the same for a machine that is already in Nunam: it gives the machine a new token and keeps its files. Use it after reinstalling the machine, or to update an indexer older than 0.4.
 
 ## Prerequisites
 
-- **.NET 10** — the SDK to publish (or build elsewhere and copy the output plus the runtime).
 - **Tesseract**, to read text in photos and scanned PDFs. Windows: `winget install UB-Mannheim.TesseractOCR`. Linux: the packages recommend it. Without it those files are still indexed, without their text.
 - **ffmpeg** with `ffprobe`, for video metadata and frames. Windows: `winget install Gyan.FFmpeg`. Linux: the distro package. Without it videos are still indexed by name.
-- **Network access** to the homelab database port (5432 by default).
+- **Network access** to the web UI's address. Use HTTPS if anyone could watch the network: the machine's token goes with every request.
 
 PDFium (PDF rendering) and SkiaSharp (images) come with the indexer.
 
@@ -17,18 +29,19 @@ Everything machine-specific goes in `appsettings.Local.json` next to the executa
 
 | Setting | |
 |---|---|
-| `ConnectionStrings:Postgres` | The machine's own database login: run `docker/add-indexer-login.sh <machine-name>` on the homelab, save the certificate it prints as `nunam-db.crt` in the install folder, and paste the connection string with that file's full path. Don't share one login between machines. |
+| `Server:Url`, `Server:Token` | The web UI's address and the machine's token. The install command fills them in; so does `Nunam.Indexer enroll --server <url> --code <code>` with a code from *Add machine*. Don't copy a token to another machine. |
+| `Server:CertificateSha256` | Only for a server with a self-signed certificate: its SHA-256 in hex. That certificate is then accepted and no other. `enroll` takes it as `--certificate-sha256`. |
 | `Indexer:WatchPaths` | Folders to index, recursively. A whole drive works too (`/`, `C:\`); see `SkipSystemFolders`. |
 | `Indexer:MachineName` | Name shown in the UI; defaults to the hostname. The machine is identified by hostname, so renaming here keeps its files. |
 | `Indexer:ExcludePatterns` | Defaults skip `.git`, `node_modules`, `bin`, `obj` and similar. Use `/` as the separator on every OS. Patterns match only below the watch path, so a watch path that is itself a `bin` folder is still indexed. |
 | `Indexer:SkipSystemFolders` | `true` by default: inside a watch path, skip the operating system and installed programs (on Linux `/usr`, `/etc`, `/var`, `/opt`, `/proc` and the like; on Windows `Windows`, `Program Files`, `ProgramData`, the recycle bin, the page file), app data in home folders (hidden folders such as `~/.config` and `~/.local`, and `AppData` on Windows), and package caches (`.cache`, `.nuget/packages`, `.venv`). A watch path inside one of those, such as `/opt/wiki`, is still indexed. |
-| `Indexer:RemoteManagement` | `false` by default. `true` lets admins and the machine's owners change some settings and restart, pause or resume the indexer from the **Machines** page. Only this file can turn it on. |
+| `Indexer:RemoteManagement` | `false` by default. `true` lets admins and the machine's owners change some settings and restart, pause or resume the indexer from the **Machines** page. Only this file can turn it on; the install command does when *Manage it from here* is ticked. |
 | `Indexer:FFmpegBinaryFolder` | Only if ffmpeg isn't on `PATH`. |
 | `Indexer:OcrLanguage` | `eng` by default. Use `eng+tam` and the like for more; each language needs its Tesseract data (`apt install tesseract-ocr-tam`, `dnf install tesseract-langpack-tam`, or a ticked language in the Windows installer). `Indexer:OcrTessDataPath` points at a different tessdata folder. |
 | `Indexer:OcrTesseractPath` | Only if `tesseract` isn't on `PATH` (or, on Windows, in `C:\Program Files\Tesseract-OCR`). |
 | `Indexer:Parsers`, `OcrEngine`, `PdfRenderer`, `Commands`, `PluginFolder` | Which parser reads which extension, and other programs or plugins to read files with. See [extending the indexer](extending-the-indexer.md). |
 
-The file holds secrets: on Windows only Administrators, SYSTEM and the service can read it, on Linux only root and the service.
+The file holds the machine's token: on Windows only Administrators, SYSTEM and the service can read it, on Linux only root and the service.
 
 ## Windows
 
@@ -38,7 +51,7 @@ Build the installer on a Linux machine with the .NET SDK and msitools (`dnf inst
 deploy/indexer/windows/build-msi.sh   # artifacts/packages/nunam-indexer-<version>-x64.msi
 ```
 
-Run the MSI on the Windows machine. It installs the indexer to `C:\Program Files\Nunam\Indexer` with its own .NET runtime, and registers the `Nunam.Indexer` service. The service stays stopped until the settings are filled in. Then open Start → **Configure Nunam Indexer**. It asks for administrator rights and which account to run as (below), opens `appsettings.Local.json` in Notepad and waits for you to save and close it. It then sets the service to delayed automatic start that restarts on failure, grants read access to the watch paths if needed and starts it. Run it again after changing the watch paths. Installing a newer MSI keeps the settings and starts the service again on its own. OCR needs Tesseract (the configure script warns when it can't find it); video needs ffmpeg on `PATH` or `Indexer:FFmpegBinaryFolder`.
+The install command runs this MSI for you. By hand: run it on the Windows machine. It installs the indexer to `C:\Program Files\Nunam\Indexer` with its own .NET runtime, and registers the `Nunam.Indexer` service, which stays stopped until the machine is connected. Connect it in PowerShell as administrator with the command under *Indexer already installed?* in *Add machine*, then open Start → **Configure Nunam Indexer**. It asks for administrator rights and which account to run as (below). Without watch paths or remote management it opens `appsettings.Local.json` in Notepad and waits for you to save and close it. It then sets the service to delayed automatic start that restarts on failure, grants read access to the watch paths if needed, those set in the web UI included, and starts it. Run it again after changing the watch paths. Installing a newer MSI keeps the settings and starts the service again on its own. OCR needs Tesseract (the configure script warns when it can't find it); video needs ffmpeg on `PATH` or `Indexer:FFmpegBinaryFolder`.
 
 The script asks which account the service runs as:
 
@@ -62,10 +75,10 @@ Build the packages on a Linux machine with the .NET SDK and Docker:
 deploy/indexer/linux/build-packages.sh   # artifacts/packages/nunam-indexer_<version>_amd64.deb and nunam-indexer-<version>-1.x86_64.rpm
 ```
 
-Install the one that fits: `sudo apt install ./nunam-indexer_0.1.0_amd64.deb` (Debian 12 or later, Ubuntu) or `sudo dnf install ./nunam-indexer-0.1.0-1.x86_64.rpm` (Fedora). The .NET runtime is included; ffmpeg (video) and Tesseract with English (OCR) come as recommended packages. Then:
+The install command installs the one that fits and does steps 1–3. By hand: `sudo apt install ./nunam-indexer_0.4.0_amd64.deb` (Debian 12 or later, Ubuntu) or `sudo dnf install ./nunam-indexer-0.4.0-1.x86_64.rpm` (Fedora). The .NET runtime is included; ffmpeg (video) and Tesseract with English (OCR) come as recommended packages. Then:
 
-1. Fill in `/etc/nunam-indexer/appsettings.Local.json`, save the database certificate as `/etc/nunam-indexer/nunam-db.crt`, and use that path in the connection string. The file is readable only by root and the service.
-2. Choose the user it runs as. `sudo nunam-indexer-account` asks, or name one directly:
+1. Connect it with the command under *Indexer already installed?* in *Add machine*. It writes the server's address and the machine's token to `/etc/nunam-indexer/appsettings.Local.json`, which only root and the service can read. Watch paths go there too, unless they are set in the web UI.
+2. Choose the user it runs as. The install command asks when it runs in a terminal. `sudo nunam-indexer-account` asks, or name one directly:
    - **Yourself**, `sudo nunam-indexer-account $USER`. It reads everything you can, mounted shares included, and nothing needs granting. It still runs sandboxed, read-only.
    - **The `nunam` system user** (the default, `sudo nunam-indexer-account --default`). It can't read anyone's home folder, so let it read each watch path:
      ```bash
@@ -81,13 +94,13 @@ Installing a newer package keeps the settings and restarts the service. The serv
 
 ## What happens next
 
-On start the indexer registers the machine, scans every watch path and queues each new or changed file; files deleted while it was off, and files a removed watch path or a new exclude pattern no longer covers, are dropped. A watch path that is missing at start (an unplugged drive) keeps its entries. After that it follows changes as they happen. Files become keyword-searchable as soon as they're parsed, and searchable by meaning once the AI worker has embedded them — the status line in the UI shows how far it has got.
+On start the indexer signs in to the server, scans every watch path and queues each new or changed file; files deleted while it was off, and files a removed watch path or a new exclude pattern no longer covers, are dropped. A watch path that is missing at start (an unplugged drive) keeps its entries. After that it follows changes as they happen. Files become keyword-searchable as soon as they're parsed, and searchable by meaning once the AI worker has embedded them — the status line in the UI shows how far it has got.
 
-Only admins see the new machine at first. To let others search it, open *Index status* in the UI and use *Share* on its row; make the machine's main user an owner so they can share it themselves.
+Only admins see the new machine at first. To let others search it, open it under *Machines* and use *Share*; make the machine's main user an owner so they can share it themselves.
 
 ## Managing it from the web UI
 
-**Machines** in the UI's header lists every machine you can see. Each indexer reports to the database every 30 seconds, and sends its log entries every few seconds. A machine that hasn't reported for 90 seconds shows as offline. Everyone who can see a machine sees whether it's online, its watch paths and its job queue. Admins and the machine's owners also see its logs (kept 7 days) and the settings in effect, with where each value came from. Passwords are never sent.
+**Machines** in the UI's header lists every machine you can see. Each indexer reports to the server every 30 seconds, and sends its log entries every few seconds. A machine that hasn't reported for 90 seconds shows as offline. Everyone who can see a machine sees whether it's online, its watch paths and its job queue. Admins and the machine's owners also see its logs (kept 7 days) and the settings in effect, with where each value came from. Passwords are never sent.
 
 With `Indexer:RemoteManagement` on, admins and owners can also do these from the same page:
 
@@ -96,14 +109,10 @@ With `Indexer:RemoteManagement` on, admins and owners can also do these from the
 - **Retry failed files.**
 - **Change settings:** machine name, watch paths, exclude patterns, skipping system folders, size limits, OCR, and which built-in parser reads each extension. A changed setting overrides the machine's own value until it's cleared, and saving restarts the indexer.
 
-Settings that run programs or load code or data files (ffmpeg, Tesseract, commands, plugins, tessdata, the connection string) can only be changed on the machine. On Windows, a new watch path also needs *Configure Nunam Indexer* run on the machine, so the service account may read it.
+Settings that run programs or load code or data files (ffmpeg, Tesseract, commands, plugins, tessdata, the server and token) can only be changed on the machine. On Windows, a new watch path also needs *Configure Nunam Indexer* run on the machine, so the service account may read it.
 
-All of this goes through the database: the indexer opens no port.
+All of this goes through the server's API, which the indexer polls every few seconds: the indexer opens no port.
 
 ## Removing a machine
 
-Uninstall it (Windows: *Settings → Apps → Nunam Indexer*; Linux: `sudo apt remove nunam-indexer` or `sudo dnf remove nunam-indexer`). On Windows `appsettings.Local.json` stays in the install folder; if the service ran as its own account, also remove the read grants (`icacls <watch path> /remove "NT SERVICE\Nunam.Indexer"` for each). Then delete its rows; files and jobs go with the machine:
-
-```sql
-DELETE FROM machines WHERE name = 'laptop';
-```
+As an admin, open the machine under **Machines** and choose **Remove**. Its files, jobs and logs go with it, and its token stops working. Then uninstall the indexer on the machine (Windows: *Settings → Apps → Nunam Indexer*; Linux: `sudo apt remove nunam-indexer` or `sudo dnf remove nunam-indexer`). On Windows `appsettings.Local.json` stays in the install folder; if the service ran as its own account, also remove the read grants (`icacls <watch path> /remove "NT SERVICE\Nunam.Indexer"` for each).

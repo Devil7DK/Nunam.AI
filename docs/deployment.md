@@ -19,17 +19,17 @@ The AI worker tolerates Ollama being unreachable: Describe and Embed jobs wait a
 
 ```bash
 cp docker/.env.example docker/.env
-# edit docker/.env: four passwords, AI_BASE_URL, ports
+# edit docker/.env: the two passwords, the worker token, AI_BASE_URL, ports
 docker compose -f docker/docker-compose.yml up -d --build
 ```
 
 | Service | What it does |
 |---|---|
-| `postgres` | pgvector on Postgres 18. Port `POSTGRES_PORT` (5432) is published because indexers on other machines write to it directly. |
-| `migrations` | Applies EF Core migrations as the owner role, then exits. The API and AI worker wait for it. |
-| `nunam-api` | Search API and sign-in, as `nunam_api`: read-only on the index, read-write on the account tables. Not published; the UI proxies to it, and it trusts nginx's `X-Forwarded-For` for the sign-in rate limit. |
+| `postgres` | pgvector on Postgres 18. Not published: only the stack reaches it. |
+| `migrations` | Applies EF Core migrations as the owner role, then exits. The API waits for it. |
+| `nunam-api` | Search, sign-in, and the agent API that indexers and the AI worker use, as `nunam_api`, the only login on the tables. Purges finished jobs and indexer logs older than 7 days. Not published; the UI proxies to it, and it trusts nginx's `X-Forwarded-For` for the sign-in rate limit. |
 | `nunam-ui` | nginx serving the UI on `UI_PORT` (3000) with security headers, and forwarding `/api` to the API. |
-| `nunam-aiworker` | Describe + Embed queues, as `nunam_aiworker`; purges finished jobs older than 7 days. |
+| `nunam-aiworker` | Describe + Embed queues, signed in to the API with `NUNAM_WORKER_TOKEN`. |
 
 Open `http://homelab:3000`.
 
@@ -47,7 +47,7 @@ Enter it with a user name and password to create the first admin. From then on s
 
 **Machines page:** *Machines* in the header shows each indexer's status, and to admins and owners its logs and settings ([managing it from the web UI](adding-a-machine.md#managing-it-from-the-web-ui)).
 
-**Who sees what:** admins see every machine. Everyone else sees only machines shared with them. A newly indexed machine is visible to admins only until someone shares it: *Index status* → *Share* on the machine's row. Owners of a machine can share it further; members can only search it.
+**Who sees what:** admins see every machine. Everyone else sees only machines shared with them. A newly added machine is visible to admins only until someone shares it: *Machines* → the machine → *Share*. Owners of a machine can share it further; members can only search it.
 
 **Sessions** last 14 days without use and 90 days at most (`Auth:SessionIdleDays`, `Auth:SessionMaxDays`). Each person can see their signed-in devices and sign them out from the account menu. Five wrong passwords lock an account for 15 minutes, and each address gets 10 attempts a minute.
 
@@ -65,19 +65,22 @@ DELETE FROM users;
 
 Nunam is built for the LAN. The session cookie is marked `Secure` only when the page was loaded over HTTPS, so plain-HTTP access works; anyone who can watch LAN traffic could read a session cookie there. Put an HTTPS reverse proxy in front before exposing it beyond the LAN, and set `NUNAM_TRUSTED_PROXY` in `.env` to that proxy's address (as nginx in `nunam-ui` sees it, e.g. `172.18.0.1/32`). Only then does nginx pass on the client address and `https` scheme the proxy reports; without it, every request looks like it came from the proxy, so all users share one sign-in limit, and the cookie isn't marked `Secure`.
 
-**Database logins.** `docker/postgres/10-roles.sh` creates the AI worker and API logins the first time the `pgdata` volume is initialised; changing a password in `.env` later does not change it in the database (`ALTER ROLE nunam_api PASSWORD '…'`). Keep passwords free of `;` — Npgsql connection strings split on it.
+**Database login.** `docker/postgres/10-roles.sh` creates the API's login the first time the `pgdata` volume is initialised; changing its password in `.env` later does not change it in the database (`ALTER ROLE nunam_api PASSWORD '…'`). Keep it free of `;`, since Npgsql connection strings split on it. `docker/postgres/20-tls.sh` gives Postgres a self-signed certificate, and every TCP login must use TLS.
 
-**Each indexed machine gets its own login**, created on the homelab with:
+**Indexer packages.** *Machines* → *Add machine* shows a command that downloads the indexer from this server. The API hands out the newest `.msi`, `.deb` and `.rpm` from `artifacts/packages` (mounted at `/packages`; on a server running registry images, `packages/` beside `compose.yaml`). Build them with `deploy/indexer/windows/build-msi.sh` and `deploy/indexer/linux/build-packages.sh`. Without a package, the dialog shows a command for a machine where the indexer is already installed.
 
-```bash
-docker/add-indexer-login.sh laptop          # prints the database certificate and the connection string
+**Machine tokens.** Each indexer signs in with its own token, which it gets once with a single-use code from *Add machine* (valid an hour). The token reads and writes only that machine's files and jobs. *Reconnect* on a machine gives it a new token and keeps its files; *Remove* deletes the machine, its files and its token.
+
+**HTTPS.** Indexers send their token with every request. Over plain HTTP it can be read by anyone watching LAN traffic, so put Nunam behind an HTTPS proxy and open the UI through it before adding machines: the command uses the address the page was opened with. An indexer behind a self-signed certificate can pin it with `Server:CertificateSha256` (the certificate's SHA-256, in hex).
+
+**Moving from 0.3.** Earlier indexers wrote to Postgres with their own logins. The `MoveAgentsToApi` migration takes away every right those logins and `nunam_aiworker` had, so 0.3 indexers stop working until they are updated: use *Reconnect* on each machine and run its command there, which installs 0.4 over the old version and connects it with the machine's files kept. In `.env`, drop `POSTGRES_PORT` and `NUNAM_AIWORKER_PASSWORD` and add `NUNAM_WORKER_TOKEN`. The old logins can then go, as the owner:
+
+```sql
+REVOKE CONNECT ON DATABASE nunam FROM nunam_indexer, nunam_aiworker;
+REVOKE USAGE ON SCHEMA public FROM nunam_indexer, nunam_aiworker;
+DROP ROLE nunam_idx_laptop;   -- one per machine: SELECT rolname FROM pg_roles WHERE rolname LIKE 'nunam_idx_%';
+DROP ROLE nunam_indexer, nunam_aiworker;
 ```
-
-Row-level security limits that login to the machine it registers: it cannot read, change or queue work for any other machine's files, so a leaked indexer password exposes only that machine's own index. The AI worker can update descriptions and embeddings but cannot add files; the API only reads. To retire a machine's login: `DROP ROLE nunam_idx_laptop;` after deleting the machine.
-
-**TLS.** `docker/postgres/20-tls.sh` gives Postgres a self-signed certificate (valid 10 years) when the volume is first initialised, and from then on every TCP login must use TLS; plain connections are refused. Indexers pin that certificate (`SSL Mode=VerifyCA`), so a machine on the LAN posing as the database can't collect their passwords. A volume created before this script existed has neither: run `docker compose -f docker/docker-compose.yml exec -u postgres postgres bash /docker-entrypoint-initdb.d/20-tls.sh`, then restart the stack.
-
-A login registers the machine on its first run. If the hostname is already registered under a different login (for example after recreating the login), the indexer stops with an error; delete the old machine row or reuse its login.
 
 ## 4. Updating
 

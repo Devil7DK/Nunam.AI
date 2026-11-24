@@ -6,15 +6,15 @@ Nunam finds files on every computer in your home by what is in them: the words i
 
 | Part | Runs on | What it does |
 |---|---|---|
-| **Indexer** | each computer with files (Windows, Linux) | Scans the folders you choose, watches them for changes, and reads each file locally: text from PDFs, Office files and plain text, OCR of images and scanned pages, tags of songs, details of videos and photos. Writes what it finds to the database. |
+| **Indexer** | each computer with files (Windows, Linux) | Scans the folders you choose, watches them for changes, and reads each file locally: text from PDFs, Office files and plain text, OCR of images and scanned pages, tags of songs, details of videos and photos. Sends what it finds to the server. |
 | **Database** | the server | Postgres with pgvector. Holds the extracted text, file details, a scaled-down preview of each image, and the vectors used for search by meaning. |
 | **AI worker** | the server | Sends each preview to a vision model for a short description, then turns the text and description into a vector with an embedding model. |
 | **Ollama** | a machine with a GPU | Runs the two models. Any Ollama server on your network works, or an OpenAI-compatible one such as LM Studio. |
-| **API and web UI** | the server | Search, previews, accounts and sharing, and the *Machines* page for each indexer's status, logs and settings. |
+| **API and web UI** | the server | Search, previews, accounts and sharing, and the *Machines* page to add machines and see each indexer's status, logs and settings. Indexers and the AI worker reach the database only through the API. |
 
 ## What leaves each computer
 
-The indexer reads files where they are and never copies them. It sends the database only:
+The indexer reads files where they are and never copies them. It sends the server only:
 
 - the path, size, dates and type of each file;
 - the text it could extract, capped at 500,000 characters per file;
@@ -34,9 +34,9 @@ Either can also be used alone, and results can be narrowed by type, machine, ext
 
 ## Who sees what
 
-Every person signs in with their own account. Admins see every machine. Everyone else sees only the machines shared with them, and the owner of a machine decides who that is. Each indexer has its own database login, which can read and write only its own machine's rows.
+Every person signs in with their own account. Admins see every machine. Everyone else sees only the machines shared with them, and the owner of a machine decides who that is. Each indexer signs in to the API with its own machine token, which reads and writes only its own machine's files. Removing a machine in the UI revokes its token.
 
 ## Getting started
 
 1. [Deploy the server](deployment.md): Postgres, the API, the web UI and the AI worker in Docker.
-2. [Add each computer](adding-a-machine.md): install the indexer and choose its folders.
+2. [Add each computer](adding-a-machine.md): copy the install command from *Machines* → *Add machine*, run it there, and choose its folders.
