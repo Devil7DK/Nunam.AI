@@ -31,6 +31,17 @@ server {
         proxy_read_timeout 60s;
     }
 
+    # Indexers and the AI worker: parse results carry extracted text and a preview image, and the
+    # install commands download the indexer's packages.
+    location /api/agent/ {
+        proxy_pass http://nunam-api:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $client_scheme;
+        client_max_body_size 32m;
+        proxy_read_timeout 120s;
+    }
+
     location /assets/ {
         include /etc/nginx/snippets/security-headers.conf;
         expires 1y;

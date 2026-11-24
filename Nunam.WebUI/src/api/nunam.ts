@@ -362,3 +362,27 @@ export const sendIndexerCommand = (machineId: string, kind: IndexerCommandKind) 
   send<IndexerCommandInfo>('POST', `/api/machines/${machineId}/indexer/commands`, { kind });
 export const saveIndexerSettings = (machineId: string, settings: RemoteIndexerSettings) =>
   send<IndexerSettingsInfo>('PUT', `/api/machines/${machineId}/indexer/settings`, settings);
+
+export type PackageKind = 'msi' | 'deb' | 'rpm';
+
+export interface EnrollmentCreated {
+  id: string;
+  code: string;
+  expiresAt: string;
+  /** The packages the server can hand out; without one the install command can't download the indexer. */
+  packages: PackageKind[];
+}
+
+export interface EnrollmentState {
+  id: string;
+  expiresAt: string;
+  usedAt: string | null;
+  machineId: string | null;
+}
+
+/** A one-time code for the install command: a new machine, or a new token for `machineId`. */
+export const createEnrollment = (body: { machineId?: string; name?: string }) =>
+  send<EnrollmentCreated>('POST', '/api/machines/enrollments', body);
+export const getEnrollment = (id: string, signal?: AbortSignal) =>
+  getJson<EnrollmentState>(`/api/machines/enrollments/${id}`, signal);
+export const deleteMachine = (machineId: string) => send('DELETE', `/api/machines/${machineId}`);

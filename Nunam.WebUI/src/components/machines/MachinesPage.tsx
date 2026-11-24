@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ArrowLeft, Pause, Play, RotateCcw, RotateCw, Share2 } from 'lucide-react';
+import { ArrowLeft, Link2, Pause, Play, Plus, RotateCcw, RotateCw, Share2, Trash2 } from 'lucide-react';
 import {
+  deleteMachine,
   getIndexer,
   getIndexers,
   sendIndexerCommand,
@@ -9,7 +10,9 @@ import {
   type IndexerListItem,
   type MachineSummary,
 } from '@/api/nunam';
+import { useAuth } from '@/auth/context';
 import { MachineAccessDialog } from '@/components/MachineAccessDialog';
+import { AddMachineDialog } from '@/components/machines/AddMachineDialog';
 import { MachineActivity } from '@/components/machines/MachineActivity';
 import { MachineLogs } from '@/components/machines/MachineLogs';
 import { MachineOverview } from '@/components/machines/MachineOverview';
@@ -103,11 +106,48 @@ function Actions({ details, onSent }: { details: IndexerDetails; onSent: () => v
   );
 }
 
-function MachineDetail({ machineId, onChanged }: { machineId: string; onChanged: () => void }) {
+function RemoveMachine({ details, onRemoved }: { details: IndexerDetails; onRemoved: () => void }) {
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const remove = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await deleteMachine(details.machineId);
+      onRemoved();
+    } catch (e) {
+      setError((e as Error).message);
+      setBusy(false);
+    }
+  };
+
+  if (!confirming) {
+    return <Button variant="ghost" size="sm" onClick={() => setConfirming(true)}><Trash2 />Remove</Button>;
+  }
+  return (
+    <div className="w-full space-y-2 rounded-md border border-destructive/40 p-3 text-sm">
+      <p>
+        Remove {details.name} and its {details.fileCount.toLocaleString()} indexed files from Nunam? Its indexer can't
+        connect any more. Nothing on the machine itself is deleted; uninstall the indexer there.
+      </p>
+      {error && <p role="alert" className="text-destructive">{error}</p>}
+      <div className="flex gap-2">
+        <Button variant="destructive" size="sm" onClick={remove} disabled={busy}>Remove machine</Button>
+        <Button variant="ghost" size="sm" onClick={() => setConfirming(false)} disabled={busy}>Cancel</Button>
+      </div>
+    </div>
+  );
+}
+
+function MachineDetail({ machineId, onChanged, onRemoved }: { machineId: string; onChanged: () => void; onRemoved: () => void }) {
+  const { user } = useAuth();
   const [details, setDetails] = useState<IndexerDetails | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState('overview');
   const [sharing, setSharing] = useState(false);
+  const [reconnecting, setReconnecting] = useState(false);
 
   const load = useCallback((signal?: AbortSignal) => {
     getIndexer(machineId, signal).then(
@@ -148,7 +188,13 @@ function MachineDetail({ machineId, onChanged }: { machineId: string; onChanged:
           </p>
         </div>
         {details.canManage && (
-          <Button variant="ghost" size="sm" onClick={() => setSharing(true)}><Share2 />Share</Button>
+          <div className="flex flex-wrap items-center gap-1">
+            <Button variant="ghost" size="sm" onClick={() => setSharing(true)}><Share2 />Share</Button>
+            <Button variant="ghost" size="sm" onClick={() => setReconnecting(true)} title="Give the machine a new token, keeping its files">
+              <Link2 />Reconnect
+            </Button>
+            {user.role === 'admin' && <RemoveMachine details={details} onRemoved={onRemoved} />}
+          </div>
         )}
       </div>
 
@@ -175,14 +221,22 @@ function MachineDetail({ machineId, onChanged }: { machineId: string; onChanged:
         machine={sharing ? ({ id: details.machineId, name: details.name } as MachineSummary) : null}
         onOpenChange={(open) => !open && setSharing(false)}
       />
+      <AddMachineDialog
+        open={reconnecting}
+        onOpenChange={setReconnecting}
+        machine={{ id: details.machineId, name: details.name }}
+        onConnected={refreshSoon}
+      />
     </div>
   );
 }
 
 /** Every indexer the user can see: status for all, settings, logs and actions for admins and owners. */
 export function MachinesPage({ machineId, onNavigate }: { machineId: string | null; onNavigate: (path: string) => void }) {
+  const { user } = useAuth();
   const [machines, setMachines] = useState<IndexerListItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
 
   const loadList = useCallback((signal?: AbortSignal) => {
     getIndexers(signal).then(setMachines, (e: Error) => { if (e.name !== 'AbortError') setError(e.message); });
@@ -202,19 +256,39 @@ export function MachinesPage({ machineId, onNavigate }: { machineId: string | nu
       <div className="mb-4 flex items-center gap-3">
         <Button variant="ghost" size="sm" onClick={() => onNavigate('/')}><ArrowLeft />Search</Button>
         <h1 className="text-base font-semibold">Machines</h1>
+        {user.role === 'admin' && (
+          <Button variant="outline" size="sm" className="ml-auto" onClick={() => setAdding(true)}><Plus />Add machine</Button>
+        )}
       </div>
 
       {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
       {machines?.length === 0 && (
-        <p className="text-sm text-muted-foreground">No machines are shared with you yet. Ask an admin or a machine's owner.</p>
+        <p className="text-sm text-muted-foreground">
+          {user.role === 'admin'
+            ? 'No machines yet. Add one to install the indexer on it.'
+            : "No machines are shared with you yet. Ask an admin or a machine's owner."}
+        </p>
       )}
 
       {machines && machines.length > 0 && (
         <div className="grid gap-6 md:grid-cols-[15rem_1fr]">
           <MachineList machines={machines} selected={selected} onSelect={(id) => onNavigate(`/machines/${id}`)} />
-          {selected && <MachineDetail key={selected} machineId={selected} onChanged={() => loadList()} />}
+          {selected && (
+            <MachineDetail
+              key={selected}
+              machineId={selected}
+              onChanged={() => loadList()}
+              onRemoved={() => { loadList(); onNavigate('/machines'); }}
+            />
+          )}
         </div>
       )}
+
+      <AddMachineDialog
+        open={adding}
+        onOpenChange={setAdding}
+        onConnected={(id) => { loadList(); onNavigate(`/machines/${id}`); }}
+      />
     </div>
   );
 }

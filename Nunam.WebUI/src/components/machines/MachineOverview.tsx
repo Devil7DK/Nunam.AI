@@ -52,7 +52,7 @@ export function MachineOverview({ details }: { details: IndexerDetails }) {
         </dl>
         {!status && (
           <p className="mt-3 text-muted-foreground">
-            This machine's indexer hasn't reported yet. Indexers older than 0.2.0 don't report; update it to see its status here.
+            This machine's indexer hasn't reported yet. It does within a minute of starting; if it doesn't, check its log on the machine. Indexers older than 0.4.0 can't connect; update the indexer on the machine, then use Reconnect.
           </p>
         )}
       </section>
