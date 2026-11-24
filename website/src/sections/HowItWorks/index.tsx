@@ -13,13 +13,13 @@ const STEPS: Step[] = [
     where: 'On each computer',
     name: 'Indexer',
     detail:
-      'Scans and watches your folders, reads each file where it is, and writes the text, details and a small preview to the server. A Windows service or a systemd unit.',
+      'Scans and watches your folders, reads each file where it is, and sends the text, details and a small preview to the server. A Windows service or a systemd unit, installed with one command from the web UI.',
   },
   {
     where: 'On the server',
     name: 'Postgres + pgvector',
     detail:
-      'Holds the index: text, previews and vectors. The API and web UI search it, and the AI worker fills in descriptions and vectors. Runs in Docker.',
+      'Holds the index: text, previews and vectors. The API is the only way in: the web UI searches through it, indexers send files to it, and the AI worker fills in descriptions and vectors. Runs in Docker.',
   },
   {
     where: 'On your GPU',

@@ -13,8 +13,8 @@ const POINTS = [
     text: 'Descriptions and vectors come from models running on your own GPU through Ollama. No file, preview or query is sent to a cloud service.',
   },
   {
-    title: 'One login per machine',
-    text: 'Each indexer has its own database login that can read and write only its own machine’s rows, over TLS with a pinned certificate.',
+    title: 'One token per machine',
+    text: 'Each indexer signs in with its own token, which reads and writes only its own machine’s files. Remove the machine and the token stops working. The database is never on the network.',
   },
   {
     title: 'Least privilege on each computer',

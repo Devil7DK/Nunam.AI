@@ -38,9 +38,10 @@ export const Download: FC = () => (
         <p className='eyebrow'>Download</p>
         <h2 className='title'>Get Nunam</h2>
         <p className='subtitle'>
-          Start with the server, then install the indexer on each computer whose
-          files you want to find. The installers are self-contained and need no
-          .NET runtime. macOS is coming.
+          Start with the server, then add each computer whose files you want to
+          find: the web UI shows a command that installs the indexer and connects
+          it. The installers are self-contained and need no .NET runtime. macOS
+          is coming.
         </p>
       </header>
 
