@@ -19,7 +19,7 @@ The code works once, for an hour. The command downloads the newest package the s
 
 - **Tesseract**, to read text in photos and scanned PDFs. Windows: `winget install UB-Mannheim.TesseractOCR`. Linux: the packages recommend it. Without it those files are still indexed, without their text.
 - **ffmpeg** with `ffprobe`, for video metadata and frames. Windows: `winget install Gyan.FFmpeg`. Linux: the distro package. Without it videos are still indexed by name.
-- **Network access** to the web UI's address. Use HTTPS if anyone could watch the network: the machine's token goes with every request.
+- **Network access** to the web UI's address. Open the UI on its https port (3443) before copying the command: the machine's token goes with every request.
 
 PDFium (PDF rendering) and SkiaSharp (images) come with the indexer.
 
@@ -30,7 +30,7 @@ Everything machine-specific goes in `appsettings.Local.json` next to the executa
 | Setting | |
 |---|---|
 | `Server:Url`, `Server:Token` | The web UI's address and the machine's token. The install command fills them in; so does `Nunam.Indexer enroll --server <url> --code <code>` with a code from *Add machine*. Don't copy a token to another machine. |
-| `Server:CertificateSha256` | Only for a server with a self-signed certificate: its SHA-256 in hex. That certificate is then accepted and no other. `enroll` takes it as `--certificate-sha256`. |
+| `Server:CertificateSha256` | For a server whose certificate the machine can't verify, such as the self-signed one: its SHA-256 in hex. That certificate is then accepted and no other. The command copied over https fills it in; `enroll` takes it as `--certificate-sha256`. |
 | `Indexer:WatchPaths` | Folders to index, recursively. A whole drive works too (`/`, `C:\`); see `SkipSystemFolders`. |
 | `Indexer:MachineName` | Name shown in the UI; defaults to the hostname. The machine is identified by hostname, so renaming here keeps its files. |
 | `Indexer:ExcludePatterns` | Defaults skip `.git`, `node_modules`, `bin`, `obj` and similar. Use `/` as the separator on every OS. Patterns match only below the watch path, so a watch path that is itself a `bin` folder is still indexed. |

@@ -4,7 +4,7 @@ The stack is `compose.yaml` beside this file. Its settings are in `.env`, which 
 
 | Service | What it is | Reachable at |
 | --- | --- | --- |
-| `nunam-ui` | the web UI, and the proxy to the API | `UI_PORT` (3000) on the LAN |
+| `nunam-ui` | the web UI, and the proxy to the API | `UI_HTTPS_PORT` (3443) and `UI_PORT` (3000, http) on the LAN |
 | `postgres` | the index: files, text, previews, vectors, accounts | inside the stack only, TLS only |
 | `nunam-api` | search, previews, sign-in, and what indexers and the AI worker call | inside the stack only, through `nunam-ui` |
 | `nunam-aiworker` | describes images and embeds files, with the Ollama server | nowhere; it takes jobs from the API |
@@ -22,9 +22,11 @@ docker compose up -d
 docker compose logs nunam-api | grep "setup code"
 ```
 
-Open `http://<this machine>:3000` and enter the setup code with a user name and password; that account is the first admin. The code works only while there are no accounts.
+Open `https://<this machine>:3443`, accept the self-signed certificate, and enter the setup code with a user name and password; that account is the first admin. The code works only while there are no accounts.
 
 The `postgres/` scripts run once, when the data volume is created: `10-roles.sh` makes the API's login from its password in `.env`, and `20-tls.sh` makes the self-signed certificate Postgres requires for TCP logins. Changing those passwords in `.env` later does not change them in the database.
+
+`nunam-ui` creates its own self-signed certificate in `tls/` on first start; the *Add machine* command pins it. To serve your own instead, put `cert.pem` (with intermediates) and `key.pem` there and restart `nunam-ui`. *HTTPS* in the deployment docs covers names, renewals and pinning.
 
 ## Adding a machine
 
