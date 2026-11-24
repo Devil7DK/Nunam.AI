@@ -11,25 +11,52 @@ const POLL_MS = 3000;
 
 type Platform = 'windows' | 'linux';
 
+/** Fingerprints of a certificate the machines can't verify themselves, which the commands pin. */
+type CertificatePin = { sha256: string; publicKeySha256: string };
+
+/** nginx serves this on its own https port only; anywhere else there is nothing to pin. */
+async function fetchCertificatePin(): Promise<CertificatePin | null> {
+  if (window.location.protocol !== 'https:') return null;
+  try {
+    const response = await fetch('/certificate.json', { cache: 'no-store' });
+    if (!response.ok) return null;
+    const info = await response.json() as CertificatePin & { pin: boolean };
+    return info.pin ? { sha256: info.sha256, publicKeySha256: info.publicKeySha256 } : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Single quotes keep both shells from expanding anything in the value. */
 const quote = (value: string) => `'${value.replace(/'/g, "'\\''")}'`;
 const psQuote = (value: string) => `'${value.replace(/'/g, "''")}'`;
 
-function installCommand(platform: Platform, server: string, code: string, name: string, remote: boolean) {
+function installCommand(platform: Platform, server: string, code: string, name: string, remote: boolean, pin: CertificatePin | null) {
   if (platform === 'windows') {
-    return `& ([scriptblock]::Create((irm ${psQuote(`${server}/api/agent/install.ps1`)}))) -Server ${psQuote(server)} -Code ${psQuote(code)}`
+    // Windows PowerShell can't pin a certificate itself (its callbacks run without a runspace); curl.exe can.
+    const script = psQuote(`${server}/api/agent/install.ps1`);
+    const download = pin
+      ? `(curl.exe -fsSLk --pinnedpubkey ${psQuote(`sha256//${pin.publicKeySha256}`)} ${script} | Out-String)`
+      : `(irm ${script})`;
+    return `& ([scriptblock]::Create(${download})) -Server ${psQuote(server)} -Code ${psQuote(code)}`
       + (name ? ` -Name ${psQuote(name)}` : '')
-      + (remote ? ' -RemoteManagement' : '');
+      + (remote ? ' -RemoteManagement' : '')
+      + (pin ? ` -CertificateSha256 ${psQuote(pin.sha256)} -PublicKeySha256 ${psQuote(pin.publicKeySha256)}` : '');
   }
-  return `curl -fsSL ${quote(`${server}/api/agent/install.sh`)} | sudo sh -s -- --server ${quote(server)} --code ${quote(code)}`
+  const curlPin = pin ? ` -k --pinnedpubkey ${quote(`sha256//${pin.publicKeySha256}`)}` : '';
+  return `curl -fsSL${curlPin} ${quote(`${server}/api/agent/install.sh`)} | sudo sh -s -- --server ${quote(server)} --code ${quote(code)}`
     + (name ? ` --name ${quote(name)}` : '')
-    + (remote ? ' --remote-management' : '');
+    + (remote ? ' --remote-management' : '')
+    + (pin ? ` --certificate-sha256 ${quote(pin.sha256)} --public-key-sha256 ${quote(pin.publicKeySha256)}` : '');
 }
 
 /** For a machine that already has the indexer installed, or when the server has no package to hand out. */
-function enrollCommand(platform: Platform, server: string, code: string, name: string, remote: boolean) {
+function enrollCommand(platform: Platform, server: string, code: string, name: string, remote: boolean, pin: CertificatePin | null) {
   const q = platform === 'windows' ? psQuote : quote;
-  const args = ['enroll', '--server', q(server), '--code', q(code), ...(name ? ['--name', q(name)] : []), ...(remote ? ['--remote-management'] : [])].join(' ');
+  const args = ['enroll', '--server', q(server), '--code', q(code),
+    ...(name ? ['--name', q(name)] : []),
+    ...(remote ? ['--remote-management'] : []),
+    ...(pin ? ['--certificate-sha256', q(pin.sha256)] : [])].join(' ');
   return platform === 'windows'
     ? `& "$env:ProgramFiles\\Nunam\\Indexer\\Nunam.Indexer.exe" ${args}`
     : `sudo /usr/lib/nunam-indexer/Nunam.Indexer ${args}`;
@@ -57,17 +84,18 @@ function CommandBox({ command, label }: { command: string; label: string }) {
   );
 }
 
-function PlatformSteps({ platform, enrollment, server, name, remote }: {
+function PlatformSteps({ platform, enrollment, server, name, remote, pin }: {
   platform: Platform;
   enrollment: EnrollmentCreated;
   server: string;
   name: string;
   remote: boolean;
+  pin: CertificatePin | null;
 }) {
   const needed: PackageKind[] = platform === 'windows' ? ['msi'] : ['deb', 'rpm'];
   const available = needed.filter((k) => enrollment.packages.includes(k));
-  const install = installCommand(platform, server, enrollment.code, name, remote);
-  const enroll = enrollCommand(platform, server, enrollment.code, name, remote);
+  const install = installCommand(platform, server, enrollment.code, name, remote, pin);
+  const enroll = enrollCommand(platform, server, enrollment.code, name, remote, pin);
 
   return (
     <div className="space-y-3 text-sm">
@@ -122,6 +150,7 @@ export function AddMachineDialog({ open, onOpenChange, machine, onConnected }: {
   const [remote, setRemote] = useState(true);
   const [platform, setPlatform] = useState<Platform>(() => (navigator.userAgent.includes('Windows') ? 'windows' : 'linux'));
   const [enrollment, setEnrollment] = useState<EnrollmentCreated | null>(null);
+  const [pin, setPin] = useState<CertificatePin | null>(null);
   const [connectedId, setConnectedId] = useState<string | null>(null);
   const [expired, setExpired] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -162,7 +191,12 @@ export function AddMachineDialog({ open, onOpenChange, machine, onConnected }: {
     setError(null);
     setExpired(false);
     try {
-      setEnrollment(await createEnrollment(machine ? { machineId: machine.id } : { name: name.trim() || undefined }));
+      const [created, certificate] = await Promise.all([
+        createEnrollment(machine ? { machineId: machine.id } : { name: name.trim() || undefined }),
+        fetchCertificatePin(),
+      ]);
+      setPin(certificate);
+      setEnrollment(created);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -218,14 +252,21 @@ export function AddMachineDialog({ open, onOpenChange, machine, onConnected }: {
               </TabsList>
               {(['windows', 'linux'] as const).map((p) => (
                 <TabsContent key={p} value={p} className="pt-2">
-                  <PlatformSteps platform={p} enrollment={enrollment} server={server} name={machine ? '' : name.trim()} remote={remote} />
+                  <PlatformSteps platform={p} enrollment={enrollment} server={server} name={machine ? '' : name.trim()} remote={remote} pin={pin} />
                 </TabsContent>
               ))}
             </Tabs>
             {window.location.protocol === 'http:' && (
               <p className="text-xs text-muted-foreground">
-                This page is on plain http, so the machine's token travels unencrypted on your network. Put Nunam behind
-                https to avoid that; the command uses the address you opened this page with.
+                This page is on plain http, so the machine's token travels unencrypted on your network. Open Nunam on
+                its https port (3443 unless changed) to avoid that; the command uses the address you opened this page with.
+              </p>
+            )}
+            {pin && (
+              <p className="text-xs text-muted-foreground">
+                The command trusts this server's own certificate by its fingerprint, SHA-256{' '}
+                <span className="font-mono break-all">{pin.sha256.match(/../g)?.join(':')}</span>. The container's log shows the
+                same fingerprint.
               </p>
             )}
             {expired ? (
