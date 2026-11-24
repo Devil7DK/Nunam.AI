@@ -1,0 +1,157 @@
+# A published release (tag vX.Y.Z) builds everything for that version: the server images, pushed to
+# ghcr.io/<owner>/nunam-* as X.Y.Z and X.Y and attached as docker-save archives; the indexer's
+# .msi, .deb and .rpm; and the server's Compose files. The tag must match the Version in
+# Nunam.Indexer.csproj, so the repository and the release agree on what version this is.
+name: Release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.event.release.tag_name }}
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - id: check
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          version=${TAG#v}
+          # The MSI and rpm accept only plain numeric versions.
+          if ! [[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Release tags look like v1.2.3; got $TAG."
+            exit 1
+          fi
+          project=$(grep -oP '(?<=<Version>)[^<]+' Nunam.Indexer/Nunam.Indexer.csproj)
+          if [ "$project" != "$version" ]; then
+            echo "::error::$TAG doesn't match Nunam.Indexer.csproj, which says $project. Bump it, then tag that commit."
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  image:
+    name: ${{ matrix.image }}
+    needs: version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: nunam-api
+            dockerfile: Nunam.API/Dockerfile
+          - image: nunam-ui
+            dockerfile: Nunam.WebUI/Dockerfile
+          - image: nunam-aiworker
+            dockerfile: Nunam.AIWorker/Dockerfile
+          - image: nunam-migrations
+            dockerfile: docker/migrations.Dockerfile
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Name
+        id: name
+        run: echo "repository=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/${{ matrix.image }}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        id: meta
+        with:
+          images: ${{ steps.name.outputs.repository }}
+          tags: |
+            type=raw,value=${{ env.VERSION }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ env.VERSION }}
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.image }}
+
+      - name: Attach the image archive
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IMAGE: ${{ steps.name.outputs.repository }}:${{ env.VERSION }}
+          ARCHIVE: ${{ matrix.image }}-${{ env.VERSION }}-amd64.tar.gz
+        run: |
+          docker pull "$IMAGE"
+          docker save "$IMAGE" | gzip -9 > "$ARCHIVE"
+          gh release upload "${{ github.event.release.tag_name }}" "$ARCHIVE" --clobber
+
+  indexer:
+    needs: version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Install wixl
+        run: sudo apt-get update -q && sudo apt-get install -y -q wixl
+
+      - name: Build the .msi, .deb and .rpm
+        run: |
+          deploy/indexer/windows/build-msi.sh
+          deploy/indexer/linux/build-packages.sh
+
+      - name: Attach the installers
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd artifacts/packages
+          gh release upload "${{ github.event.release.tag_name }}" \
+            "nunam-indexer-$VERSION-x64.msi" "nunam-indexer_${VERSION}_amd64.deb" "nunam-indexer-$VERSION-1.x86_64.rpm" \
+            --clobber
+
+  server:
+    needs: version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Attach the server's Compose files
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          dir="nunam-server-$VERSION"
+          mkdir -p "$dir/postgres" "$dir/packages"
+          cp deploy/server/compose.yaml deploy/server/README.md "$dir/"
+          # Pinned to this release rather than latest.
+          sed "s/^NUNAM_TAG=.*/NUNAM_TAG=$VERSION/" deploy/server/.env.example > "$dir/.env.example"
+          cp docker/postgres/*.sh "$dir/postgres/"
+          tar -czf "$dir.tar.gz" "$dir"
+          gh release upload "${{ github.event.release.tag_name }}" "$dir.tar.gz" --clobber
