@@ -399,12 +399,6 @@ namespace Nunam.Core.Data.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created");
 
-                    b.Property<string>("DbRole")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("text")
-                        .HasColumnName("db_role")
-                        .HasDefaultValueSql("current_user");
-
                     b.Property<string>("Hostname")
                         .IsRequired()
                         .HasColumnType("text")
@@ -423,12 +417,23 @@ namespace Nunam.Core.Data.Migrations
                         .HasColumnType("text")
                         .HasColumnName("name");
 
+                    b.Property<byte[]>("TokenHash")
+                        .HasColumnType("bytea")
+                        .HasColumnName("token_hash");
+
+                    b.Property<DateTimeOffset?>("TokenIssuedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("token_issued_at");
+
                     b.HasKey("Id")
                         .HasName("pk_machines");
 
                     b.HasIndex("Hostname")
-                        .IsUnique()
                         .HasDatabaseName("ix_machines_hostname");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique()
+                        .HasDatabaseName("ix_machines_token_hash");
 
                     b.ToTable("machines", (string)null);
                 });
@@ -472,6 +477,64 @@ namespace Nunam.Core.Data.Migrations
                         .HasDatabaseName("ix_machine_access_user_id_machine_id");
 
                     b.ToTable("machine_access", (string)null);
+                });
+
+            modelBuilder.Entity("Nunam.Core.Entities.MachineEnrollment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<byte[]>("CodeHash")
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasColumnName("code_hash");
+
+                    b.Property<DateTimeOffset>("Created")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("created_by");
+
+                    b.Property<Guid?>("EnrolledMachineId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("enrolled_machine_id");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
+                    b.Property<DateTimeOffset>("LastModified")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_modified");
+
+                    b.Property<Guid?>("MachineId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("machine_id");
+
+                    b.Property<string>("Name")
+                        .HasColumnType("text")
+                        .HasColumnName("name");
+
+                    b.Property<DateTimeOffset?>("UsedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("used_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_machine_enrollments");
+
+                    b.HasIndex("CodeHash")
+                        .IsUnique()
+                        .HasDatabaseName("ix_machine_enrollments_code_hash");
+
+                    b.HasIndex("MachineId")
+                        .HasDatabaseName("ix_machine_enrollments_machine_id");
+
+                    b.ToTable("machine_enrollments", (string)null);
                 });
 
             modelBuilder.Entity("Nunam.Core.Entities.User", b =>
@@ -683,6 +746,17 @@ namespace Nunam.Core.Data.Migrations
                     b.Navigation("Machine");
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Nunam.Core.Entities.MachineEnrollment", b =>
+                {
+                    b.HasOne("Nunam.Core.Entities.Machine", "Machine")
+                        .WithMany()
+                        .HasForeignKey("MachineId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .HasConstraintName("fk_machine_enrollments_machines_machine_id");
+
+                    b.Navigation("Machine");
                 });
 
             modelBuilder.Entity("Nunam.Core.Entities.UserSession", b =>

@@ -15,6 +15,7 @@ namespace Nunam.Core.Data
         public DbSet<IndexerSettings> IndexerSettings => Set<IndexerSettings>();
         public DbSet<IndexerCommand> IndexerCommands => Set<IndexerCommand>();
         public DbSet<IndexerLogEntry> IndexerLogs => Set<IndexerLogEntry>();
+        public DbSet<MachineEnrollment> MachineEnrollments => Set<MachineEnrollment>();
 
         protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
         {
@@ -32,8 +33,8 @@ namespace Nunam.Core.Data
 
             model.Entity<Machine>(e =>
             {
-                e.HasIndex(m => m.Hostname).IsUnique();
-                e.Property(m => m.DbRole).HasDefaultValueSql("current_user").ValueGeneratedOnAdd();
+                e.HasIndex(m => m.Hostname);
+                e.HasIndex(m => m.TokenHash).IsUnique();
             });
 
             model.Entity<IndexedFile>(e =>
@@ -130,6 +131,12 @@ namespace Nunam.Core.Data
                 e.Property(c => c.Kind).HasConversion<string>();
                 e.Property(c => c.Status).HasConversion<string>();
                 e.HasOne(c => c.Machine).WithMany().HasForeignKey(c => c.MachineId).OnDelete(DeleteBehavior.Cascade);
+            });
+
+            model.Entity<MachineEnrollment>(e =>
+            {
+                e.HasIndex(x => x.CodeHash).IsUnique();
+                e.HasOne(x => x.Machine).WithMany().HasForeignKey(x => x.MachineId).OnDelete(DeleteBehavior.Cascade);
             });
 
             model.Entity<IndexerLogEntry>(e =>
