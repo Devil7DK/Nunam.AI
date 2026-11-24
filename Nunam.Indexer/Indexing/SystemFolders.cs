@@ -9,9 +9,10 @@
     public static class SystemFolders
     {
         // Also on a Windows drive mounted elsewhere: AppData of any profile, and each profile's registry hives.
+        // ~$ files are the owner files Office keeps beside an open document, not documents themselves.
         private static readonly string[] AnyOs =
         [
-            "/.git/", "/node_modules/", "/bin/", "/obj/", "/.vs/", "/$RECYCLE.BIN/", "/System Volume Information/", "*.tmp",
+            "/.git/", "/node_modules/", "/bin/", "/obj/", "/.vs/", "/$RECYCLE.BIN/", "/System Volume Information/", "*.tmp", "~$*",
             "/AppData/", "ntuser.*", "/.cache/", "/.nuget/packages/", "/.npm/", "/.cargo/registry/", "/.rustup/", "/.m2/repository/",
             "/.gradle/caches/", "/.dotnet/", "/.vscode/extensions/", "/.vscode-server/", "/__pycache__/",
             "/.venv/", "/site-packages/", "/.Trash/", "/.Trash-", "/.Spotlight-V100/", "/.fseventsd/",
