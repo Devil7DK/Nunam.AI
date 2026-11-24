@@ -689,7 +689,7 @@ Step-by-step guides: **`docs/deployment.md`** (homelab stack) and **`docs/adding
 - [x] Scaffold `Nunam.AIWorker` project (homelab AI-side worker — Describe + Embed) — skeleton `DescribeWorker` + `EmbedWorker` in `Workers/`, Dockerfile, `appsettings.json` shape, added to `Nunam.slnx`
 - [x] Set up PostgreSQL + pgvector via Docker — dev: container `nunam-dev-postgres` (§14); homelab: `docker/docker-compose.yml` (§10)
 - [x] Implement `NunamDbContext` with EF Core in Core (snake_case naming, enum-as-string conversions, HNSW + GIN + queue indexes, `TouchEntityInterceptor` for `LastModified`)
-- [x] Add initial EF Core migration (`Nunam.Core/Data/Migrations/20260605015843_InitialSchema.cs`) — `fts` trigger as raw SQL in `Up()`, `PreviewImage` column included, all snake_case
+- [x] Add initial EF Core migration (`Nunam.Core/Data/Migrations/20261124154950_InitialSchema.cs`) — `fts` trigger and the `nunam_api` grants as raw SQL in `Up()`, all snake_case. The development migrations were squashed into it before the first release, so a database from before then has to be recreated
 - [x] Add `IDesignTimeDbContextFactory<NunamDbContext>` in Core so migrations can be generated/applied without wiring `AddDbContext` into a startup project's `Program.cs`
 - [x] Run `dotnet ef database update --project Nunam.Core --startup-project Nunam.API` — schema applied to local `nunam_dev` database; verified all tables, HNSW + GIN indexes, FTS trigger, and pgvector 0.8.2 extension are in place
 - [x] Implement AI inference service (embed + describe) in Core — `Nunam.Core/AI/`. Renamed from `OllamaService` to `IAIInferenceService`/`AIInferenceService` (provider-neutral). Built on `Microsoft.Extensions.AI`; `AddNunamAI(config)` selects Ollama (OllamaSharp) or OpenAI-compatible / LM Studio (`Microsoft.Extensions.AI.OpenAI`) via `AI:Provider`. Returns pgvector `Vector`; supports single + batch embeddings and image description with per-call prompt override.
@@ -730,7 +730,7 @@ Step-by-step guides: **`docs/deployment.md`** (homelab stack) and **`docs/adding
 - [x] Add CORS for local network access — config-driven origin list
 - [x] Test natural language queries end-to-end — on the dev sample set: "documents about land or property" → the sale agreement and land deed; "when is the electricity bill due" → the scanned bill and bill photo; "family celebration video" → the birthday video; "photo from a holiday" → the holiday photo. Weak spot: audio is only embedded from its tags, so "music" barely separates the song from unrelated files
 - [x] Embed with nomic's `search_document:` / `search_query:` prefixes (needed re-embedding the dev set)
-- [x] Switch to the homelab Ollama: `bge-m3` embeddings (`vector(1024)`, migration `UseBgeM3Embeddings` clears old vectors and queues every file for re-embedding) and `gemma4:12b-it-qat` descriptions with reasoning off; semantic margin recalibrated to 0.05 (§9)
+- [x] Switch to the homelab Ollama: `bge-m3` embeddings (`vector(1024)`, old vectors cleared and every file queued for re-embedding) and `gemma4:12b-it-qat` descriptions with reasoning off; semantic margin recalibrated to 0.05 (§9)
 - [ ] `POST /api/index/trigger` — not built; the API's DB user is read-only (see §7)
 
 ### Phase 4 — Frontend

@@ -71,15 +71,6 @@ Nunam is built for the LAN. The session cookie is marked `Secure` only when the 
 
 **Machine tokens.** Each indexer signs in with its own token, which it gets once with a single-use code from *Add machine* (valid an hour). The token reads and writes only that machine's files and jobs. *Reconnect* on a machine gives it a new token and keeps its files; *Remove* deletes the machine, its files and its token.
 
-**Moving from 0.3.** Earlier indexers wrote to Postgres with their own logins. The `MoveAgentsToApi` migration takes away every right those logins and `nunam_aiworker` had, so 0.3 indexers stop working until they are updated: use *Reconnect* on each machine and run its command there, which installs 0.4 over the old version and connects it with the machine's files kept. In `.env`, drop `POSTGRES_PORT` and `NUNAM_AIWORKER_PASSWORD` and add `NUNAM_WORKER_TOKEN`. The old logins can then go, as the owner:
-
-```sql
-REVOKE CONNECT ON DATABASE nunam FROM nunam_indexer, nunam_aiworker;
-REVOKE USAGE ON SCHEMA public FROM nunam_indexer, nunam_aiworker;
-DROP ROLE nunam_idx_laptop;   -- one per machine: SELECT rolname FROM pg_roles WHERE rolname LIKE 'nunam_idx_%';
-DROP ROLE nunam_indexer, nunam_aiworker;
-```
-
 ## HTTPS
 
 Indexers send their token with every request, and browsers their session cookie. Over plain http both can be read by anyone watching LAN traffic, so open the UI on its https port before adding machines: the *Add machine* command uses the address the page was opened with.
@@ -139,4 +130,4 @@ INSERT INTO index_jobs (id, machine_id, path, kind, status, stage, created, last
 SELECT gen_random_uuid(), machine_id, path, 'Embed', 'Pending', 'None', now(), now() FROM files;
 ```
 
-A model with a different dimension needs a migration changing `vector(1024)` (see `UseBgeM3Embeddings` for the pattern: clear vectors, alter the column, queue Embed jobs).
+A model with a different dimension needs a migration changing `vector(1024)` that clears the old vectors, alters the column and queues an Embed job for every file.
