@@ -10,7 +10,7 @@ BuildArch:      x86_64
 # the ones that matter are listed instead.
 AutoReqProv:    no
 Requires:       glibc libgcc libstdc++ openssl-libs libicu zlib systemd
-Recommends:     tesseract tesseract-langpack-eng /usr/bin/ffmpeg acl
+Recommends:     tesseract tesseract-langpack-eng /usr/bin/ffmpeg acl policycoreutils-python-utils
 
 %global debug_package %{nil}
 %global source_date_epoch_from_changelog 0

@@ -8,6 +8,18 @@ chgrp nunam /etc/nunam-indexer /etc/nunam-indexer/appsettings.Local.json
 chmod 0750 /etc/nunam-indexer
 chmod 0640 /etc/nunam-indexer/appsettings.Local.json
 
+# SELinux: started from a lib_t file the service stays in init_t, which may not connect to port 443.
+# As bin_t it runs as unconfined_service_t, like other services without a policy of their own.
+if command -v selinuxenabled >/dev/null 2>&1 && selinuxenabled; then
+    if command -v semanage >/dev/null 2>&1; then
+        semanage fcontext -a -t bin_t '/usr/lib/nunam-indexer/Nunam\.Indexer' 2>/dev/null \
+            || semanage fcontext -m -t bin_t '/usr/lib/nunam-indexer/Nunam\.Indexer'
+        restorecon /usr/lib/nunam-indexer/Nunam.Indexer
+    else
+        chcon -t bin_t /usr/lib/nunam-indexer/Nunam.Indexer
+    fi
+fi
+
 if [ -d /run/systemd/system ]; then
     systemctl daemon-reload
     if systemctl is-enabled --quiet nunam-indexer; then
