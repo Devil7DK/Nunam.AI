@@ -45,7 +45,7 @@ The file holds the machine's token: on Windows only Administrators, SYSTEM and t
 
 ## Windows
 
-Build the installer on a Linux machine with the .NET SDK and msitools (`dnf install msitools`, `apt install wixl`):
+Each [release](https://github.com/Devil7DK/Nunam.AI/releases) has the installer, `nunam-indexer-<version>-x64.msi`. To build it yourself, on a Linux machine with the .NET SDK and msitools (`dnf install msitools`, `apt install wixl`):
 
 ```bash
 deploy/indexer/windows/build-msi.sh   # artifacts/packages/nunam-indexer-<version>-x64.msi
@@ -69,7 +69,7 @@ Warnings and errors go to Event Viewer → Windows Logs → Application.
 
 ## Linux
 
-Build the packages on a Linux machine with the .NET SDK and Docker:
+Each [release](https://github.com/Devil7DK/Nunam.AI/releases) has the packages. To build them yourself, on a Linux machine with the .NET SDK and Docker:
 
 ```bash
 deploy/indexer/linux/build-packages.sh   # artifacts/packages/nunam-indexer_<version>_amd64.deb and nunam-indexer-<version>-1.x86_64.rpm
