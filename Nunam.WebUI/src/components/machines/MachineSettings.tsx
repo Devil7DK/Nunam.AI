@@ -24,7 +24,7 @@ const parserNames = [
 const fields: FieldDef[] = [
   { key: 'machineName', option: 'MachineName', label: 'Machine name', kind: 'text', hint: 'Shown in the UI; the machine is still matched by hostname.' },
   { key: 'watchPaths', option: 'WatchPaths', label: 'Watch paths', kind: 'lines', hint: 'One full path per line. Files under a path you remove are dropped from the index. On Windows, run Configure Nunam Indexer on the machine so the service may read a new path.' },
-  { key: 'excludePatterns', option: 'ExcludePatterns', label: 'Exclude patterns', kind: 'lines', hint: 'One per line; replaces the whole list. /name/ skips folders with that name, *.ext skips files.' },
+  { key: 'excludePatterns', option: 'ExcludePatterns', label: 'Exclude patterns', kind: 'lines', hint: 'One per line, added to the built-in ones. /name/ skips folders with that name, *.ext skips files.' },
   { key: 'skipSystemFolders', option: 'SkipSystemFolders', label: 'Skip system folders', kind: 'bool' },
   { key: 'maxFileSizeMb', option: 'MaxFileSizeMb', label: 'Largest file to read (MB)', kind: 'number' },
   { key: 'maxPreviewMb', option: 'MaxPreviewMb', label: 'Largest image to preview (MB)', kind: 'number' },

@@ -1,4 +1,4 @@
-namespace Nunam.Indexer.Indexing
+﻿namespace Nunam.Indexer.Indexing
 {
     /// <summary>
     /// Folders that hold the operating system, installed programs, package caches and app data: nothing
@@ -8,15 +8,14 @@ namespace Nunam.Indexer.Indexing
     /// </summary>
     public static class SystemFolders
     {
+        // Also on a Windows drive mounted elsewhere: AppData of any profile, and each profile's registry hives.
         private static readonly string[] AnyOs =
         [
-            "/.cache/", "/.nuget/packages/", "/.npm/", "/.cargo/registry/", "/.rustup/", "/.m2/repository/",
+            "/.git/", "/node_modules/", "/bin/", "/obj/", "/.vs/", "/$RECYCLE.BIN/", "/System Volume Information/", "*.tmp",
+            "/AppData/", "ntuser.*", "/.cache/", "/.nuget/packages/", "/.npm/", "/.cargo/registry/", "/.rustup/", "/.m2/repository/",
             "/.gradle/caches/", "/.dotnet/", "/.vscode/extensions/", "/.vscode-server/", "/__pycache__/",
             "/.venv/", "/site-packages/", "/.Trash/", "/.Trash-", "/.Spotlight-V100/", "/.fseventsd/",
         ];
-
-        // AppData of a profile outside the system drive's Users folder, and each profile's registry hives, which are locked anyway.
-        private static readonly string[] Windows = ["/AppData/", "ntuser.*"];
 
         private static readonly string[] UnixAbsolute =
         [
@@ -29,15 +28,14 @@ namespace Nunam.Indexer.Indexing
         [
             "Windows", "Windows.old", "Program Files", "Program Files (x86)", "ProgramData", "Recovery", "PerfLogs",
             "$Recycle.Bin", "System Volume Information", "Config.Msi", "MSOCache", "OneDriveTemp", "$WinREAgent",
-            "$Windows.~BT", "$Windows.~WS", "$SysReset", "$GetCurrent", @"Users\Default",
+            "$Windows.~BT", "$Windows.~WS", "$SysReset", "$GetCurrent", "Users/Default",
             "pagefile.sys", "hiberfil.sys", "swapfile.sys", "DumpStack.log", "DumpStack.log.tmp",
         ];
 
         private static readonly string[] WindowsLocations = ["SystemRoot", "ProgramFiles", "ProgramFiles(x86)", "ProgramW6432", "ProgramData"];
 
         /// <summary>Patterns in <see cref="IndexerOptions.ExcludePatterns"/> syntax that apply anywhere.</summary>
-        public static IEnumerable<string> Patterns =>
-            OperatingSystem.IsWindows() ? AnyOs.Concat(Windows) : AnyOs;
+        public static IEnumerable<string> Patterns => AnyOs;
 
         /// <summary>System folders and files strictly inside <paramref name="root"/> (normalized).</summary>
         public static IEnumerable<string> Under(string root) =>
@@ -103,15 +101,26 @@ namespace Nunam.Indexer.Indexing
 
         private static IEnumerable<string> Candidates(string root)
         {
-            if (!OperatingSystem.IsWindows()) return UnixAbsolute;
+            if (!OperatingSystem.IsWindows()) return UnixAbsolute.Concat(MountedWindowsVolumes(root).SelectMany(OnVolume));
 
             var volume = Path.GetPathRoot(root);
-            var onVolume = string.IsNullOrEmpty(volume) ? [] : WindowsVolumeRelative.Select(name => Path.Combine(volume, name));
+            var onVolume = string.IsNullOrEmpty(volume) ? [] : OnVolume(volume);
             var located = WindowsLocations
                 .Select(Environment.GetEnvironmentVariable)
                 .Where(path => !string.IsNullOrEmpty(path))
                 .Select(path => path!);
             return onVolume.Concat(located);
+        }
+
+        private static IEnumerable<string> OnVolume(string volume) => WindowsVolumeRelative.Select(name => Path.Combine(volume, name));
+
+        // A Windows system drive mounted on Linux or macOS: the root itself or the folder above it that holds Windows/System32.
+        private static IEnumerable<string> MountedWindowsVolumes(string root)
+        {
+            for (var folder = root; !string.IsNullOrEmpty(folder); folder = Path.GetDirectoryName(folder))
+            {
+                if (Directory.Exists(Path.Combine(folder, "Windows", "System32"))) yield return folder;
+            }
         }
     }
 }

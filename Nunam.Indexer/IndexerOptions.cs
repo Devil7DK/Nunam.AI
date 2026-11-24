@@ -1,4 +1,4 @@
-namespace Nunam.Indexer
+﻿namespace Nunam.Indexer
 {
     /// <summary>
     /// Configuration for the file-indexing host: which machine this is, which paths to crawl,
@@ -23,17 +23,13 @@ namespace Nunam.Indexer
         /// <summary>
         /// Case-insensitive substring/wildcard patterns; any path containing a match (or matching a
         /// <c>*</c> glob) is skipped. Write separators as <c>/</c> — both <c>/</c> and <c>\</c> match on
-        /// every OS. Defaults cover noisy build/VCS/system folders.
+        /// every OS. Added to the built-in ones that <see cref="SkipSystemFolders"/> brings.
         /// </summary>
-        public string[] ExcludePatterns { get; set; } =
-        [
-            "/.git/", "/node_modules/", "/bin/", "/obj/", "/.vs/",
-            "/$RECYCLE.BIN/", "/System Volume Information/", "*.tmp",
-        ];
+        public string[] ExcludePatterns { get; set; } = [];
 
         /// <summary>
-        /// Also skip the OS, installed programs, caches and app data inside a watch root
-        /// (<see cref="Indexing.SystemFolders"/>), so a whole drive can be a watch path.
+        /// Also skip the OS, installed programs, caches, app data and build/VCS folders inside a watch
+        /// root (<see cref="Indexing.SystemFolders"/>), so a whole drive can be a watch path.
         /// </summary>
         public bool SkipSystemFolders { get; set; } = true;
 
