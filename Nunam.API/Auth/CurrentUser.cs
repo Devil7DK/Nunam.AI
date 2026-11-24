@@ -17,6 +17,10 @@ namespace Nunam.API.Auth
 
         public static bool IsAdmin(this ClaimsPrincipal user) => user.IsInRole(nameof(UserRole.Admin));
 
+        /// <summary>The machine whose indexer sent the request.</summary>
+        public static Guid MachineId(this ClaimsPrincipal agent) =>
+            Guid.Parse(agent.FindFirstValue(AgentAuthenticationHandler.MachineIdClaim)!);
+
         public static bool MustChangePassword(this ClaimsPrincipal user) =>
             user.FindFirstValue(MustChangePasswordClaim) == "true";
     }

@@ -10,6 +10,11 @@ namespace Nunam.API.Auth
 
         public const string Admin = "Admin";
 
+        /// <summary>A machine's indexer, signed in with its machine token.</summary>
+        public const string Indexer = "Indexer";
+
+        public const string AIWorker = "AIWorker";
+
         /// <summary>Rate-limiter policy for endpoints that take a password or setup code.</summary>
         public const string PasswordAttempts = "PasswordAttempts";
 
@@ -29,6 +34,12 @@ namespace Nunam.API.Auth
             options.AddPolicy(Admin, p => p
                 .Combine(Active)
                 .RequireRole(nameof(UserRole.Admin)));
+            options.AddPolicy(Indexer, p => p
+                .AddAuthenticationSchemes(AgentAuthenticationHandler.SchemeName)
+                .RequireRole(AgentAuthenticationHandler.IndexerRole));
+            options.AddPolicy(AIWorker, p => p
+                .AddAuthenticationSchemes(AgentAuthenticationHandler.SchemeName)
+                .RequireRole(AgentAuthenticationHandler.WorkerRole));
         }
     }
 }

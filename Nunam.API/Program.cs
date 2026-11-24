@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Nunam.API;
+using Nunam.API.Agents;
 using Nunam.API.Auth;
 using Nunam.API.Endpoints;
 using Nunam.API.Services;
@@ -15,6 +16,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.Configure<SearchOptions>(builder.Configuration.GetSection(SearchOptions.SectionName));
 builder.Services.Configure<AuthOptions>(builder.Configuration.GetSection(AuthOptions.SectionName));
+builder.Services.Configure<AgentOptions>(builder.Configuration.GetSection(AgentOptions.SectionName));
 var auth = builder.Configuration.GetSection(AuthOptions.SectionName).Get<AuthOptions>() ?? new AuthOptions();
 
 builder.Services.AddDbContext<NunamDbContext>(opt => opt
@@ -31,10 +33,13 @@ builder.Services.AddSingleton<SetupCode>();
 builder.Services.AddHostedService<SetupCodeAnnouncer>();
 builder.Services.AddScoped<SessionService>();
 builder.Services.AddScoped<MachineScope>();
+builder.Services.AddSingleton<IndexerPackages>();
+builder.Services.AddHostedService<MaintenanceWorker>();
 
 builder.Services
     .AddAuthentication(SessionAuthenticationHandler.SchemeName)
-    .AddScheme<AuthenticationSchemeOptions, SessionAuthenticationHandler>(SessionAuthenticationHandler.SchemeName, null);
+    .AddScheme<AuthenticationSchemeOptions, SessionAuthenticationHandler>(SessionAuthenticationHandler.SchemeName, null)
+    .AddScheme<AuthenticationSchemeOptions, AgentAuthenticationHandler>(AgentAuthenticationHandler.SchemeName, null);
 builder.Services.AddAuthorization(Policies.Add);
 
 builder.Services.AddRateLimiter(o =>
@@ -93,5 +98,8 @@ app.MapSearchEndpoints();
 app.MapFileEndpoints();
 app.MapStatusEndpoints();
 app.MapIndexerEndpoints();
+app.MapEnrollmentEndpoints();
+app.MapAgentIndexerEndpoints();
+app.MapAgentWorkerEndpoints();
 
 app.Run();
