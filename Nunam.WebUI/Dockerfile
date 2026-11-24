@@ -7,8 +7,14 @@ COPY Nunam.WebUI/ ./
 RUN npm run build
 
 FROM nginx:1.29-alpine@sha256:5616878291a2eed594aee8db4dade5878cf7edcb475e59193904b198d9b830de
+RUN apk add --no-cache openssl
 # 127.0.0.1 never proxies into the container, so by default no forwarded header is trusted.
-ENV NUNAM_TRUSTED_PROXY=127.0.0.1/32
+ENV NUNAM_TRUSTED_PROXY=127.0.0.1/32 \
+    NUNAM_TLS_CERT=/etc/nunam/tls/cert.pem \
+    NUNAM_TLS_KEY=/etc/nunam/tls/key.pem
 COPY Nunam.WebUI/nginx.conf.template /etc/nginx/templates/default.conf.template
 COPY Nunam.WebUI/security-headers.conf /etc/nginx/snippets/security-headers.conf
+COPY Nunam.WebUI/locations.conf /etc/nginx/snippets/nunam-locations.conf
+COPY --chmod=755 Nunam.WebUI/tls-certificate.sh /docker-entrypoint.d/40-nunam-tls.sh
 COPY --from=build /app/dist /usr/share/nginx/html
+EXPOSE 80 443
