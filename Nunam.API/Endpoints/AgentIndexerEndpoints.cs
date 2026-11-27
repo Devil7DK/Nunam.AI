@@ -300,7 +300,25 @@ namespace Nunam.API.Endpoints
                     await UpsertAsync(db, job, parsed, cancellationToken);
                     job.Status = IndexJobStatus.Done;
                     job.Error = null;
-                    break;
+                    try
+                    {
+                        // Not cancellable: a finished parse must land even when the indexer hangs up.
+                        await db.SaveChangesAsync(CancellationToken.None);
+                    }
+                    catch (DbUpdateException ex) when (ex.InnerException is Npgsql.PostgresException { SqlState: var state }
+                        && (state.StartsWith("22", StringComparison.Ordinal) || state == "54000"))
+                    {
+                        // Postgres refused a value from this file: fail its job rather than answer 500, which
+                        // the indexer would retry forever, holding up the results queued behind it.
+                        db.ChangeTracker.Clear();
+                        var reason = Truncate($"The server could not store this file: {((Npgsql.PostgresException)ex.InnerException).MessageText}", 2000);
+                        await db.IndexJobs.Where(j => j.Id == id).ExecuteUpdateAsync(j => j
+                            .SetProperty(x => x.Status, IndexJobStatus.Failed)
+                            .SetProperty(x => x.Stage, IndexJobStage.Upsert)
+                            .SetProperty(x => x.Error, reason)
+                            .SetProperty(x => x.LastModified, DateTimeOffset.UtcNow), CancellationToken.None);
+                    }
+                    return TypedResults.NoContent();
                 case JobOutcome.Done:
                     return TypedResults.ValidationProblem(new Dictionary<string, string[]> { ["file"] = ["A finished job needs its file."] });
                 case JobOutcome.Failed:
@@ -342,7 +360,7 @@ namespace Nunam.API.Endpoints
             file.FileModifiedAt = parsed.ModifiedAt;
             file.IndexedAt = DateTimeOffset.UtcNow;
             file.Content = content;
-            file.Metadata = string.IsNullOrWhiteSpace(parsed.Metadata) ? null : parsed.Metadata;
+            file.Metadata = string.IsNullOrWhiteSpace(parsed.Metadata) ? null : MetadataJson.WithoutNul(parsed.Metadata);
             file.PreviewImage = parsed.PreviewImage;
             if (!parsed.NeedsDescribe)
             {
