@@ -14,8 +14,8 @@ namespace Nunam.AIWorker.Workers
     /// Each provider gets as many lanes as its concurrency, and a lane claims one job at a time, only
     /// while no higher-priority provider is available, or, for a provider that takes overflow, while all
     /// of those are busy. A provider that can't be reached or refuses its key backs off and hands its job
-    /// back, so another provider can take it. The file's Embed job is queued with each result, so the
-    /// vector includes what the model saw.
+    /// back, so another provider can take it; one that answers with nothing passes the job straight on.
+    /// The file's Embed job is queued with each result, so the vector includes what the model saw.
     /// </summary>
     public class DescribeWorker(WorkerServer server, IOptions<AIWorkerOptions> options, ILogger<DescribeWorker> logger)
         : BackgroundService
@@ -197,54 +197,99 @@ namespace Nunam.AIWorker.Workers
                 return Result(job, JobOutcome.Failed, "File has no preview image to describe.", queueEmbed: true);
             }
 
-            var settings = provider.Settings;
-            try
+            var mediaType = MediaTypes.Detect(preview, job.Extension ?? Path.GetExtension(job.FileName));
+            var empty = new List<DescribeUsageReport>();
+            var tried = new HashSet<Provider>();
+            var current = provider;
+            while (true)
             {
-                var mediaType = MediaTypes.Detect(preview, job.Extension ?? Path.GetExtension(job.FileName));
-                var outcome = await provider.Describer.DescribeAsync(preview, mediaType, stoppingToken);
-                lock (_gate)
+                var settings = current.Settings;
+                var handedOver = current != provider;
+                var attempt = current;
+                tried.Add(current);
+                // A lane's own provider is already counted; one it hands over to is not.
+                if (handedOver) Interlocked.Increment(ref attempt.InFlight);
+                try
                 {
-                    provider.UnreportedSpend += (outcome.InputTokens * settings.InputPricePerMillion
-                        + outcome.OutputTokens * settings.OutputPricePerMillion) / 1_000_000m;
-                    provider.Backoff = TimeSpan.Zero;
+                    var outcome = await current.Describer.DescribeAsync(preview, mediaType, stoppingToken);
+                    lock (_gate)
+                    {
+                        current.UnreportedSpend += Cost(settings, outcome.InputTokens, outcome.OutputTokens);
+                        current.Backoff = TimeSpan.Zero;
+                    }
+                    await ReportAsync(current, null);
+                    return new WorkerJobResult(job.Id, JobOutcome.Done, null, outcome.Text, null, QueueEmbed: true,
+                        new DescribeUsageReport(settings.Id, outcome.InputTokens, outcome.OutputTokens), empty.Count > 0 ? empty : null);
                 }
-                await ReportAsync(provider, null);
-                return new WorkerJobResult(job.Id, JobOutcome.Done, null, outcome.Text, null, QueueEmbed: true,
-                    new DescribeUsageReport(settings.Id, outcome.InputTokens, outcome.OutputTokens));
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                return Result(job, JobOutcome.Returned);
-            }
-            catch (Exception ex) when (IsProviderProblem(ex))
-            {
-                TimeSpan wait;
-                lock (_gate)
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                 {
-                    provider.Backoff = provider.Backoff == TimeSpan.Zero
-                        ? TimeSpan.FromSeconds(_options.MinBackoffSeconds)
-                        : TimeSpan.FromSeconds(Math.Min(provider.Backoff.TotalSeconds * 2, _options.MaxBackoffSeconds));
-                    provider.BackoffUntil = DateTimeOffset.UtcNow + provider.Backoff;
-                    wait = provider.Backoff;
+                    return Result(job, JobOutcome.Returned, emptyAttempts: empty);
                 }
-                logger.LogWarning(ex, "{Name} is unavailable; handing the job back and pausing it for {Seconds} s", settings.Name, wait.TotalSeconds);
-                await ReportAsync(provider, ex.Message);
-                return Result(job, JobOutcome.Returned);
-            }
-            catch (Exception ex)
-            {
-                var usage = new DescribeUsageReport(settings.Id, 0, 0);
-                if (job.Attempts < _options.MaxAttempts)
+                catch (Exception ex) when (IsProviderProblem(ex))
                 {
-                    logger.LogWarning(ex, "{Name} could not describe {Path} (attempt {Attempt} of {Max}); will retry",
-                        settings.Name, job.Path, job.Attempts, _options.MaxAttempts);
-                    return Result(job, JobOutcome.Retry, usage: usage);
+                    TimeSpan wait;
+                    lock (_gate)
+                    {
+                        current.Backoff = current.Backoff == TimeSpan.Zero
+                            ? TimeSpan.FromSeconds(_options.MinBackoffSeconds)
+                            : TimeSpan.FromSeconds(Math.Min(current.Backoff.TotalSeconds * 2, _options.MaxBackoffSeconds));
+                        current.BackoffUntil = DateTimeOffset.UtcNow + current.Backoff;
+                        wait = current.Backoff;
+                    }
+                    logger.LogWarning(ex, "{Name} is unavailable; handing the job back and pausing it for {Seconds} s", settings.Name, wait.TotalSeconds);
+                    await ReportAsync(current, ex.Message);
+                    return Result(job, JobOutcome.Returned, emptyAttempts: empty);
                 }
-                // The model kept failing on this image: embed the file without a description.
-                logger.LogError(ex, "Describe job {JobId} for {Path} failed", job.Id, job.Path);
-                return Result(job, JobOutcome.Failed, ex.Message, queueEmbed: true, usage);
+                catch (EmptyDescriptionException ex) when (NextProvider(tried) is { } next)
+                {
+                    lock (_gate) current.UnreportedSpend += Cost(settings, ex.InputTokens, ex.OutputTokens);
+                    empty.Add(new DescribeUsageReport(settings.Id, ex.InputTokens, ex.OutputTokens));
+                    logger.LogWarning("{Name} wrote nothing for {Path} ({Reason}); handing it to {Next}",
+                        settings.Name, job.Path, ex.Message, next.Settings.Name);
+                    current = next;
+                }
+                catch (Exception ex)
+                {
+                    var usage = ex is EmptyDescriptionException e
+                        ? new DescribeUsageReport(settings.Id, e.InputTokens, e.OutputTokens)
+                        : new DescribeUsageReport(settings.Id, 0, 0);
+                    lock (_gate) current.UnreportedSpend += Cost(settings, usage.InputTokens, usage.OutputTokens);
+                    if (job.Attempts < _options.MaxAttempts)
+                    {
+                        logger.LogWarning(ex, "{Name} could not describe {Path} (attempt {Attempt} of {Max}); will retry",
+                            settings.Name, job.Path, job.Attempts, _options.MaxAttempts);
+                        return Result(job, JobOutcome.Retry, usage: usage, emptyAttempts: empty);
+                    }
+                    // The model kept failing on this image: embed the file without a description.
+                    logger.LogError(ex, "Describe job {JobId} for {Path} failed", job.Id, job.Path);
+                    return Result(job, JobOutcome.Failed, ex.Message, queueEmbed: true, usage, empty);
+                }
+                finally
+                {
+                    if (handedOver) Interlocked.Decrement(ref attempt.InFlight);
+                }
             }
         }
+
+        /// <summary>
+        /// The best-ranked available provider not yet tried on this job, busy or not, and whether or not
+        /// it takes overflow: the job is already claimed, and handing it back would only send it to the
+        /// provider that just failed.
+        /// </summary>
+        private Provider? NextProvider(HashSet<Provider> tried)
+        {
+            lock (_gate)
+            {
+                var now = DateTimeOffset.UtcNow;
+                return _providers.Values
+                    .Where(p => !tried.Contains(p) && p.IsAvailable(now))
+                    .OrderBy(p => p.Settings.Priority)
+                    .FirstOrDefault();
+            }
+        }
+
+        private static decimal Cost(WorkerDescribeProvider settings, long inputTokens, long outputTokens) =>
+            (inputTokens * settings.InputPricePerMillion + outputTokens * settings.OutputPricePerMillion) / 1_000_000m;
 
         /// <summary>Tells the server about a provider's failure, or its recovery, once per change.</summary>
         private async Task ReportAsync(Provider provider, string? error)
@@ -278,8 +323,9 @@ namespace Nunam.AIWorker.Workers
         };
 
         private static WorkerJobResult Result(WorkerJob job, JobOutcome outcome, string? error = null, bool queueEmbed = false,
-            DescribeUsageReport? usage = null) =>
-            new(job.Id, outcome, error is { Length: > 2000 } ? error[..2000] : error, null, null, queueEmbed, usage);
+            DescribeUsageReport? usage = null, List<DescribeUsageReport>? emptyAttempts = null) =>
+            new(job.Id, outcome, error is { Length: > 2000 } ? error[..2000] : error, null, null, queueEmbed, usage,
+                emptyAttempts is { Count: > 0 } ? emptyAttempts : null);
 
         private sealed class Provider(WorkerDescribeProvider settings, ImageDescriber describer)
         {
