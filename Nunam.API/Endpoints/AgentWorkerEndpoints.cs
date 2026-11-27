@@ -83,7 +83,10 @@ namespace Nunam.API.Endpoints
         private static async Task<Results<NoContent, ValidationProblem>> CompleteAsync(
             List<WorkerJobResult> results, NunamDbContext db, IOptions<AIOptions> ai, CancellationToken cancellationToken)
         {
-            var providerIds = results.Where(r => r.Usage is not null).Select(r => r.Usage!.ProviderId).Distinct().ToList();
+            var providerIds = results
+                .SelectMany(r => (r.EmptyAttempts ?? []).Append(r.Usage))
+                .OfType<DescribeUsageReport>()
+                .Select(u => u.ProviderId).Distinct().ToList();
             var providers = await db.DescribeProviders.AsTracking()
                 .Where(p => providerIds.Contains(p.Id))
                 .ToDictionaryAsync(p => p.Id, cancellationToken);
@@ -147,6 +150,11 @@ namespace Nunam.API.Endpoints
 
             foreach (var result in results)
             {
+                foreach (var attempt in result.EmptyAttempts ?? [])
+                {
+                    if (providers.TryGetValue(attempt.ProviderId, out var gaveNothing))
+                        await DescribeProviders.RecordAsync(db, gaveNothing, attempt.InputTokens, attempt.OutputTokens, true, CancellationToken.None);
+                }
                 if (result.Usage is not { } usage || !providers.TryGetValue(usage.ProviderId, out var provider)) continue;
                 var failed = result.Outcome != JobOutcome.Done;
                 await DescribeProviders.RecordAsync(db, provider, usage.InputTokens, usage.OutputTokens, failed, CancellationToken.None);
