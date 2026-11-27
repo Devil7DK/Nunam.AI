@@ -7,6 +7,8 @@ namespace Nunam.Core.Data
     {
         public DbSet<Machine> Machines => Set<Machine>();
         public DbSet<IndexedFile> Files => Set<IndexedFile>();
+        public DbSet<DescribeProvider> DescribeProviders => Set<DescribeProvider>();
+        public DbSet<DescribeUsage> DescribeUsage => Set<DescribeUsage>();
         public DbSet<IndexJob> IndexJobs => Set<IndexJob>();
         public DbSet<User> Users => Set<User>();
         public DbSet<UserSession> UserSessions => Set<UserSession>();
@@ -61,6 +63,23 @@ namespace Nunam.Core.Data
                     .WithMany(m => m.Files)
                     .HasForeignKey(f => f.MachineId)
                     .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            model.Entity<DescribeProvider>(e =>
+            {
+                e.HasIndex(p => p.Name).IsUnique();
+                e.Property(p => p.Kind).HasConversion<string>();
+                e.Property(p => p.BudgetPeriod).HasConversion<string>();
+                e.Property(p => p.InputPricePerMillion).HasPrecision(12, 4);
+                e.Property(p => p.OutputPricePerMillion).HasPrecision(12, 4);
+                e.Property(p => p.BudgetUsd).HasPrecision(12, 4);
+            });
+
+            model.Entity<DescribeUsage>(e =>
+            {
+                e.HasKey(u => new { u.ProviderId, u.Day });
+                e.Property(u => u.CostUsd).HasPrecision(14, 6);
+                e.HasOne(u => u.Provider).WithMany().HasForeignKey(u => u.ProviderId).OnDelete(DeleteBehavior.Cascade);
             });
 
             model.Entity<IndexJob>(e =>

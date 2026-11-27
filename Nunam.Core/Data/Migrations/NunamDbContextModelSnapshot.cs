@@ -26,6 +26,152 @@ namespace Nunam.Core.Data.Migrations
             NpgsqlModelBuilderExtensions.HasPostgresExtension(modelBuilder, "vector");
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("Nunam.Core.Entities.DescribeProvider", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("ApiKeyProtected")
+                        .HasColumnType("text")
+                        .HasColumnName("api_key_protected");
+
+                    b.Property<string>("BaseUrl")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("base_url");
+
+                    b.Property<string>("BudgetPeriod")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("budget_period");
+
+                    b.Property<decimal?>("BudgetUsd")
+                        .HasPrecision(12, 4)
+                        .HasColumnType("numeric(12,4)")
+                        .HasColumnName("budget_usd");
+
+                    b.Property<int>("Concurrency")
+                        .HasColumnType("integer")
+                        .HasColumnName("concurrency");
+
+                    b.Property<DateTimeOffset>("Created")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created");
+
+                    b.Property<bool>("DisableReasoning")
+                        .HasColumnType("boolean")
+                        .HasColumnName("disable_reasoning");
+
+                    b.Property<bool>("Enabled")
+                        .HasColumnType("boolean")
+                        .HasColumnName("enabled");
+
+                    b.Property<decimal>("InputPricePerMillion")
+                        .HasPrecision(12, 4)
+                        .HasColumnType("numeric(12,4)")
+                        .HasColumnName("input_price_per_million");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("kind");
+
+                    b.Property<string>("LastError")
+                        .HasColumnType("text")
+                        .HasColumnName("last_error");
+
+                    b.Property<DateTimeOffset?>("LastErrorAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_error_at");
+
+                    b.Property<DateTimeOffset>("LastModified")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_modified");
+
+                    b.Property<DateTimeOffset?>("LastUsedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_used_at");
+
+                    b.Property<int>("MaxOutputTokens")
+                        .HasColumnType("integer")
+                        .HasColumnName("max_output_tokens");
+
+                    b.Property<string>("Model")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("model");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("name");
+
+                    b.Property<decimal>("OutputPricePerMillion")
+                        .HasPrecision(12, 4)
+                        .HasColumnType("numeric(12,4)")
+                        .HasColumnName("output_price_per_million");
+
+                    b.Property<int>("Priority")
+                        .HasColumnType("integer")
+                        .HasColumnName("priority");
+
+                    b.Property<string>("Prompt")
+                        .HasColumnType("text")
+                        .HasColumnName("prompt");
+
+                    b.Property<bool>("TakesOverflow")
+                        .HasColumnType("boolean")
+                        .HasColumnName("takes_overflow");
+
+                    b.HasKey("Id")
+                        .HasName("pk_describe_providers");
+
+                    b.HasIndex("Name")
+                        .IsUnique()
+                        .HasDatabaseName("ix_describe_providers_name");
+
+                    b.ToTable("describe_providers", (string)null);
+                });
+
+            modelBuilder.Entity("Nunam.Core.Entities.DescribeUsage", b =>
+                {
+                    b.Property<Guid>("ProviderId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("provider_id");
+
+                    b.Property<DateOnly>("Day")
+                        .HasColumnType("date")
+                        .HasColumnName("day");
+
+                    b.Property<decimal>("CostUsd")
+                        .HasPrecision(14, 6)
+                        .HasColumnType("numeric(14,6)")
+                        .HasColumnName("cost_usd");
+
+                    b.Property<int>("Failures")
+                        .HasColumnType("integer")
+                        .HasColumnName("failures");
+
+                    b.Property<long>("InputTokens")
+                        .HasColumnType("bigint")
+                        .HasColumnName("input_tokens");
+
+                    b.Property<long>("OutputTokens")
+                        .HasColumnType("bigint")
+                        .HasColumnName("output_tokens");
+
+                    b.Property<int>("Requests")
+                        .HasColumnType("integer")
+                        .HasColumnName("requests");
+
+                    b.HasKey("ProviderId", "Day")
+                        .HasName("pk_describe_usage");
+
+                    b.ToTable("describe_usage", (string)null);
+                });
+
             modelBuilder.Entity("Nunam.Core.Entities.IndexJob", b =>
                 {
                     b.Property<Guid>("Id")
@@ -100,9 +246,21 @@ namespace Nunam.Core.Data.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created");
 
+                    b.Property<DateTimeOffset?>("DescribedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("described_at");
+
                     b.Property<string>("Description")
                         .HasColumnType("text")
                         .HasColumnName("description");
+
+                    b.Property<string>("DescriptionModel")
+                        .HasColumnType("text")
+                        .HasColumnName("description_model");
+
+                    b.Property<string>("DescriptionProvider")
+                        .HasColumnType("text")
+                        .HasColumnName("description_provider");
 
                     b.Property<Vector>("Embedding")
                         .HasColumnType("vector(1024)")
@@ -660,6 +818,18 @@ namespace Nunam.Core.Data.Migrations
                         .HasDatabaseName("ix_user_sessions_user_id");
 
                     b.ToTable("user_sessions", (string)null);
+                });
+
+            modelBuilder.Entity("Nunam.Core.Entities.DescribeUsage", b =>
+                {
+                    b.HasOne("Nunam.Core.Entities.DescribeProvider", "Provider")
+                        .WithMany()
+                        .HasForeignKey("ProviderId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_describe_usage_describe_providers_provider_id");
+
+                    b.Navigation("Provider");
                 });
 
             modelBuilder.Entity("Nunam.Core.Entities.IndexJob", b =>

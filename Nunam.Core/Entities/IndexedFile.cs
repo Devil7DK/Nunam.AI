@@ -20,6 +20,11 @@ namespace Nunam.Core.Entities
 
         public string? Content { get; set; }
         public string? Description { get; set; }
+
+        /// <summary>The model that wrote <see cref="Description"/>, and the provider it was reached through.</summary>
+        public string? DescriptionModel { get; set; }
+        public string? DescriptionProvider { get; set; }
+        public DateTimeOffset? DescribedAt { get; set; }
         public string? Metadata { get; set; }
 
         public byte[]? PreviewImage { get; set; }

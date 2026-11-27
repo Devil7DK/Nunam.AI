@@ -35,7 +35,11 @@ namespace Nunam.Core.AI
         /// <summary>Ignored by Ollama and LM Studio, kept for real OpenAI-compatible gateways.</summary>
         public string? ApiKey { get; set; }
 
-        /// <summary>Vision model used to describe images and rendered pages.</summary>
+        /// <summary>
+        /// Vision model for the first describe provider, created when there is none. After that,
+        /// describe providers are set up from the web UI, and this and the other describe settings
+        /// here are no longer read.
+        /// </summary>
         public string ChatModel { get; set; } = "gemma4:12b-it-qat";
 
         /// <summary>
@@ -72,8 +76,6 @@ namespace Nunam.Core.AI
         public string EmbeddingQueryPrefix { get; set; } = "";
 
         /// <summary>Default instruction sent alongside an image when no per-call prompt is given.</summary>
-        public string DescribePrompt { get; set; } =
-            "Describe this image in detail for a search index. Mention any visible text, " +
-            "objects, people, scene, and notable attributes. Be concise but thorough.";
+        public string DescribePrompt { get; set; } = DescribePrompts.Default;
     }
 }

@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Nunam.Core.AI;
 using Nunam.Core.Entities;
 using Nunam.Core.Management;
 
@@ -76,7 +77,21 @@ namespace Nunam.Core.Agents
         string? Description, string? Content, byte[]? PreviewImage);
 
     /// <param name="QueueEmbed">Queue the file's Embed job, which a Describe job does once it is settled.</param>
-    public record WorkerJobResult(Guid Id, JobOutcome Outcome, string? Error, string? Description, float[]? Embedding, bool QueueEmbed);
+    /// <param name="Usage">For a Describe job the worker sent to a provider: which one, and what it was billed.</param>
+    public record WorkerJobResult(Guid Id, JobOutcome Outcome, string? Error, string? Description, float[]? Embedding, bool QueueEmbed,
+        DescribeUsageReport? Usage = null);
+
+    public record DescribeUsageReport(Guid ProviderId, long InputTokens, long OutputTokens);
+
+    /// <summary>A describe provider the worker may use now: enabled and, if it has a budget, with some left.</summary>
+    /// <param name="BudgetRemainingUsd"><c>null</c> without a budget.</param>
+    public record WorkerDescribeProvider(
+        Guid Id, string Name, AIProvider Kind, string BaseUrl, string? ApiKey, string Model, string? Prompt,
+        int MaxOutputTokens, bool DisableReasoning, int Priority, int Concurrency, bool TakesOverflow,
+        decimal InputPricePerMillion, decimal OutputPricePerMillion, decimal? BudgetRemainingUsd);
+
+    /// <summary>A provider's latest failure as the worker saw it; <c>null</c> once it works again.</summary>
+    public record DescribeProviderStatus(string? Error);
 
     public record WorkerRecoverRequest(IndexJobKind Kind, int StaleMinutes, int MaxAttempts);
 }
