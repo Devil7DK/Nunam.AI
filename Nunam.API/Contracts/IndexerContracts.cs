@@ -28,6 +28,7 @@ namespace Nunam.API.Contracts
         bool CanManage,
         IndexerStatusInfo? Status,
         IReadOnlyList<JobCount> Jobs,
+        IReadOnlyList<JobRate> Rates,
         IndexerSettingsInfo? Settings,
         IReadOnlyList<IndexerCommandInfo>? Commands);
 
@@ -47,6 +48,9 @@ namespace Nunam.API.Contracts
         DateTimeOffset? ScanFinishedAt,
         IReadOnlyList<WatchPathReport> WatchPaths,
         IReadOnlyList<ConfigEntry>? Config);
+
+    /// <summary>How fast a stage has been settling jobs (done or failed) lately.</summary>
+    public record JobRate(IndexJobKind Kind, double PerSecond);
 
     public record IndexerSettingsInfo(RemoteIndexerSettings Settings, int Revision, string UpdatedBy, DateTimeOffset UpdatedAt);
 

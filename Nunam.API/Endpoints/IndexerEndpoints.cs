@@ -20,6 +20,7 @@ namespace Nunam.API.Endpoints
         // Indexers report every 30 s; three missed reports means it's off or can't reach the server.
         private static readonly TimeSpan OnlineWindow = TimeSpan.FromSeconds(90);
         private const int RecentCommandCount = 20;
+        private static readonly TimeSpan RateWindow = TimeSpan.FromMinutes(10);
         private const int MaxLogPage = 500;
 
         public static IEndpointRouteBuilder MapIndexerEndpoints(this IEndpointRouteBuilder app)
@@ -83,6 +84,7 @@ namespace Nunam.API.Endpoints
                 .GroupBy(j => new { j.Kind, j.Status })
                 .Select(g => new JobCount(g.Key.Kind, g.Key.Status, g.Count()))
                 .ToListAsync(cancellationToken);
+            var rates = await RatesAsync(db, machineId, cancellationToken);
 
             IndexerSettingsInfo? settings = null;
             List<IndexerCommandInfo>? commands = null;
@@ -106,7 +108,24 @@ namespace Nunam.API.Endpoints
                 machineId, machine.Name, machine.Hostname, machine.FileCount, machine.LastIndexedAt, canManage,
                 status is null ? null : ToInfo(status, canManage),
                 [.. jobs.OrderBy(j => j.Kind).ThenBy(j => j.Status)],
-                settings, commands));
+                rates, settings, commands));
+        }
+
+        /// <summary>
+        /// Jobs settled per second over the last few minutes, timed from the first one settled in that
+        /// window, so a stage that only just started isn't averaged over idle minutes.
+        /// </summary>
+        private static async Task<List<JobRate>> RatesAsync(NunamDbContext db, Guid machineId, CancellationToken cancellationToken)
+        {
+            var now = DateTimeOffset.UtcNow;
+            var since = now - RateWindow;
+            var settled = await db.IndexJobs
+                .Where(j => j.MachineId == machineId && j.LastModified >= since
+                    && (j.Status == IndexJobStatus.Done || j.Status == IndexJobStatus.Failed))
+                .GroupBy(j => j.Kind)
+                .Select(g => new { Kind = g.Key, Count = g.Count(), First = g.Min(j => j.LastModified) })
+                .ToListAsync(cancellationToken);
+            return [.. settled.Select(s => new JobRate(s.Kind, s.Count / Math.Max(60, (now - s.First).TotalSeconds)))];
         }
 
         private static async Task<Results<Ok<List<IndexerLogInfo>>, NotFound, ValidationProblem>> GetLogsAsync(
