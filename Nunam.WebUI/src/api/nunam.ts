@@ -341,6 +341,8 @@ export interface IndexerDetails {
   canManage: boolean;
   status: IndexerStatusInfo | null;
   jobs: JobCount[];
+  /** Jobs settled per second lately; a stage without recent work is absent. */
+  rates: { kind: JobCount['kind']; perSecond: number }[];
   settings: IndexerSettingsInfo | null;
   commands: IndexerCommandInfo[] | null;
 }

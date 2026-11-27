@@ -19,14 +19,42 @@ function Fact({ label, children, title }: { label: string; children: React.React
   );
 }
 
+function formatRate(perSecond: number): string {
+  if (perSecond >= 1) return `${perSecond.toFixed(perSecond >= 10 ? 0 : 1)}/s`;
+  const perMinute = perSecond * 60;
+  return perMinute >= 1 ? `${perMinute.toFixed(perMinute >= 10 ? 0 : 1)}/min` : `${(perMinute * 60).toFixed(0)}/h`;
+}
+
+function formatDuration(seconds: number): string {
+  if (seconds < 60) return '< 1 min';
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 48) return `${hours} h ${minutes % 60} min`;
+  return `${Math.floor(hours / 24)} d ${hours % 24} h`;
+}
+
 function When({ at }: { at: string | null }) {
   return <span title={formatDateTime(at)}>{formatRelative(at)}</span>;
+}
+
+function RateCells({ perSecond, remaining }: { perSecond: number; remaining: number }) {
+  const muted = 'text-muted-foreground/50';
+  return (
+    <>
+      <td className={`py-1.5 pr-4 text-right ${perSecond > 0 ? '' : muted}`}>{perSecond > 0 ? formatRate(perSecond) : '–'}</td>
+      <td className={`py-1.5 text-right ${remaining > 0 && perSecond > 0 ? '' : muted}`}>
+        {remaining === 0 ? '–' : perSecond > 0 ? formatDuration(remaining / perSecond) : 'waiting'}
+      </td>
+    </>
+  );
 }
 
 export function MachineOverview({ details }: { details: IndexerDetails }) {
   const status = details.status;
   const count = (kind: JobCount['kind'], s: JobCount['status']) =>
     details.jobs.find((j) => j.kind === kind && j.status === s)?.count ?? 0;
+  const rate = (kind: JobCount['kind']) => details.rates.find((r) => r.kind === kind)?.perSecond ?? 0;
 
   return (
     <div className="space-y-6 text-sm">
@@ -88,6 +116,8 @@ export function MachineOverview({ details }: { details: IndexerDetails }) {
               <tr className="border-b">
                 <th className="py-1.5 pr-4 font-medium">Stage</th>
                 {statuses.map((s) => <th key={s} className="py-1.5 pr-4 text-right font-medium capitalize">{s}</th>)}
+                <th className="py-1.5 pr-4 text-right font-medium" title="Over the last 10 minutes">Speed</th>
+                <th className="py-1.5 text-right font-medium" title="At the current speed">Time left</th>
               </tr>
             </thead>
             <tbody>
@@ -102,6 +132,7 @@ export function MachineOverview({ details }: { details: IndexerDetails }) {
                       </td>
                     );
                   })}
+                  <RateCells perSecond={rate(kind)} remaining={count(kind, 'pending') + count(kind, 'processing')} />
                 </tr>
               ))}
             </tbody>
