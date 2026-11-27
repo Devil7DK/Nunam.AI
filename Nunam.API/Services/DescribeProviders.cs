@@ -58,13 +58,15 @@ namespace Nunam.API.Services
 
     /// <summary>
     /// On a server without describe providers, creates one from the <c>AI</c> settings, so the model
-    /// that was describing images keeps doing so, and credits it with the descriptions it already wrote.
-    /// Runs beside startup rather than before it: crediting a large index takes a while.
+    /// that was describing images keeps doing so. Then credits descriptions written before providers
+    /// were recorded to the first provider. Runs beside startup, in small batches: every updated row
+    /// is added to each index on <c>files</c> again, the vector index included, at a few milliseconds
+    /// a row.
     /// </summary>
     public sealed class DescribeProviderSeeder(IServiceScopeFactory scopes, IOptions<AIOptions> ai, ILogger<DescribeProviderSeeder> logger)
         : BackgroundService
     {
-        private const int CreditBatch = 5000;
+        private const int CreditBatch = 500;
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
@@ -72,22 +74,24 @@ namespace Nunam.API.Services
             {
                 using var scope = scopes.CreateScope();
                 var db = scope.ServiceProvider.GetRequiredService<NunamDbContext>();
-                if (await db.DescribeProviders.AnyAsync(stoppingToken)) return;
-
-                var options = ai.Value;
-                var provider = new DescribeProvider
+                var provider = await db.DescribeProviders.OrderBy(p => p.Created).FirstOrDefaultAsync(stoppingToken);
+                if (provider is null)
                 {
-                    Name = options.Provider == AIProvider.Ollama ? "Local Ollama" : "Local model",
-                    Kind = options.Provider,
-                    BaseUrl = options.BaseUrl,
-                    Model = options.ChatModel,
-                    Prompt = options.DescribePrompt == DescribePrompts.Default ? null : options.DescribePrompt,
-                    MaxOutputTokens = options.MaxOutputTokens,
-                    DisableReasoning = options.DisableReasoning,
-                };
-                db.DescribeProviders.Add(provider);
-                await db.SaveChangesAsync(stoppingToken);
-                logger.LogInformation("Created describe provider {Name} ({Model}) from the AI settings", provider.Name, provider.Model);
+                    var options = ai.Value;
+                    provider = new DescribeProvider
+                    {
+                        Name = options.Provider == AIProvider.Ollama ? "Local Ollama" : "Local model",
+                        Kind = options.Provider,
+                        BaseUrl = options.BaseUrl,
+                        Model = options.ChatModel,
+                        Prompt = options.DescribePrompt == DescribePrompts.Default ? null : options.DescribePrompt,
+                        MaxOutputTokens = options.MaxOutputTokens,
+                        DisableReasoning = options.DisableReasoning,
+                    };
+                    db.DescribeProviders.Add(provider);
+                    await db.SaveChangesAsync(stoppingToken);
+                    logger.LogInformation("Created describe provider {Name} ({Model}) from the AI settings", provider.Name, provider.Model);
+                }
 
                 var credited = 0;
                 int batch;
@@ -99,11 +103,11 @@ namespace Nunam.API.Services
                         """, stoppingToken);
                     credited += batch;
                 } while (batch == CreditBatch);
-                logger.LogInformation("Credited {Name} with {Count} existing description(s)", provider.Name, credited);
+                if (credited > 0) logger.LogInformation("Credited {Name} with {Count} earlier description(s)", provider.Name, credited);
             }
             catch (Exception ex) when (!stoppingToken.IsCancellationRequested)
             {
-                logger.LogError(ex, "Could not set up the first describe provider; add one on the AI page");
+                logger.LogError(ex, "Could not set up or credit the first describe provider; it is tried again on the next start");
             }
         }
     }
