@@ -19,6 +19,7 @@ namespace Nunam.API.Contracts
         string? Ext,
         DateOnly? From,
         DateOnly? To,
+        bool? Described,
         int? Limit,
         int? Offset);
 
@@ -100,6 +101,7 @@ namespace Nunam.API.Contracts
         DateTimeOffset? ModifiedAt,
         string? Snippet,
         string? Description,
+        string? DescriptionModel,
         bool HasPreview,
         double? Score,
         double? Similarity);

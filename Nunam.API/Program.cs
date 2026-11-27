@@ -25,6 +25,8 @@ builder.Services.AddDbContext<NunamDbContext>(opt => opt
 
 builder.Services.AddNunamAI(builder.Configuration);
 builder.Services.AddScoped<SearchService>();
+builder.Services.AddSingleton<SecretProtector>();
+builder.Services.AddHostedService<DescribeProviderSeeder>();
 builder.Services.AddSingleton<ThumbnailService>();
 builder.Services.AddMemoryCache(o => o.SizeLimit = 64 * 1024 * 1024);
 
@@ -101,5 +103,6 @@ app.MapIndexerEndpoints();
 app.MapEnrollmentEndpoints();
 app.MapAgentIndexerEndpoints();
 app.MapAgentWorkerEndpoints();
+app.MapAIEndpoints();
 
 app.Run();

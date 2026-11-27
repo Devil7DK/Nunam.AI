@@ -96,7 +96,7 @@ namespace Nunam.API.Services
 
             var results = rows.Select(r => new SearchResult(
                 r.Id, r.FileName, r.Path, r.Machine, Enum.Parse<FileType>(r.FileType), r.Extension, r.SizeBytes,
-                r.FileModifiedAt, r.Snippet is null ? null : Whitespace().Replace(r.Snippet, " ").Trim(), r.Description, r.HasPreview,
+                r.FileModifiedAt, r.Snippet is null ? null : Whitespace().Replace(r.Snippet, " ").Trim(), r.Description, r.DescriptionModel, r.HasPreview,
                 r.Score is null ? null : Math.Round(r.Score.Value, 4),
                 r.Similarity is null ? null : Math.Round(r.Similarity.Value, 4))).ToList();
 
@@ -147,6 +147,7 @@ namespace Nunam.API.Services
                 {
                     Value = request.To is { } to ? ToUtc(to.AddDays(1)) : DBNull.Value,
                 },
+                new NpgsqlParameter("described", NpgsqlDbType.Boolean) { Value = (object?)request.Described ?? DBNull.Value },
             ];
         }
 
@@ -164,11 +165,12 @@ namespace Nunam.API.Services
                   AND (@extensions IS NULL OR lower(f.extension) = ANY(@extensions))
                   AND (@from IS NULL OR f.file_modified_at >= @from)
                   AND (@to IS NULL OR f.file_modified_at < @to)
+                  AND (@described IS NULL OR (f.description IS NOT NULL) = @described)
             """;
 
         private const string ResultColumns = """
                 f.id, f.file_name, f.path, m.name AS machine, f.file_type, f.extension, f.size_bytes,
-                f.file_modified_at, f.description, f.preview_image IS NOT NULL AS has_preview,
+                f.file_modified_at, f.description, f.description_model, f.preview_image IS NOT NULL AS has_preview,
                 p.score, p.similarity, p.total
             """;
 
@@ -266,6 +268,7 @@ namespace Nunam.API.Services
             public long? SizeBytes { get; set; }
             public DateTimeOffset? FileModifiedAt { get; set; }
             public string? Description { get; set; }
+            public string? DescriptionModel { get; set; }
             public bool HasPreview { get; set; }
             public double? Score { get; set; }
             public double? Similarity { get; set; }

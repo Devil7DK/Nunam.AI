@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Nunam.API.Auth;
+using Nunam.API.Services;
 using Nunam.Core.Agents;
 using Nunam.Core.AI;
 using Nunam.Core.Data;
@@ -20,6 +21,8 @@ namespace Nunam.API.Endpoints
             worker.MapPost("/jobs/claim", ClaimAsync);
             worker.MapPost("/jobs/results", CompleteAsync);
             worker.MapPost("/jobs/recover", RecoverAsync);
+            worker.MapGet("/describe-providers", DescribeProvidersAsync);
+            worker.MapPost("/describe-providers/{id:guid}/status", ProviderStatusAsync);
             return app;
         }
 
@@ -80,6 +83,11 @@ namespace Nunam.API.Endpoints
         private static async Task<Results<NoContent, ValidationProblem>> CompleteAsync(
             List<WorkerJobResult> results, NunamDbContext db, IOptions<AIOptions> ai, CancellationToken cancellationToken)
         {
+            var providerIds = results.Where(r => r.Usage is not null).Select(r => r.Usage!.ProviderId).Distinct().ToList();
+            var providers = await db.DescribeProviders.AsTracking()
+                .Where(p => providerIds.Contains(p.Id))
+                .ToDictionaryAsync(p => p.Id, cancellationToken);
+
             var ids = results.Select(r => r.Id).ToList();
             var jobs = await db.IndexJobs.AsTracking()
                 .Where(j => ids.Contains(j.Id) && j.Status == IndexJobStatus.Processing
@@ -104,7 +112,11 @@ namespace Nunam.API.Endpoints
                         }
                         if (job.Kind == IndexJobKind.Describe)
                         {
+                            var provider = result.Usage is { } used ? providers.GetValueOrDefault(used.ProviderId) : null;
                             file.Description = result.Description;
+                            file.DescriptionModel = provider?.Model;
+                            file.DescriptionProvider = provider?.Name;
+                            file.DescribedAt = DateTimeOffset.UtcNow;
                         }
                         else if (result.Embedding is { } vector && vector.Length == dimensions)
                         {
@@ -133,9 +145,56 @@ namespace Nunam.API.Endpoints
                 if (result.QueueEmbed && job.Kind == IndexJobKind.Describe) queue.Enqueue(job.MachineId, job.Path, IndexJobKind.Embed);
             }
 
+            foreach (var result in results)
+            {
+                if (result.Usage is not { } usage || !providers.TryGetValue(usage.ProviderId, out var provider)) continue;
+                var failed = result.Outcome != JobOutcome.Done;
+                await DescribeProviders.RecordAsync(db, provider, usage.InputTokens, usage.OutputTokens, failed, CancellationToken.None);
+                if (!failed) provider.LastUsedAt = DateTimeOffset.UtcNow;
+            }
+
             // Not cancellable: the GPU time is spent; the results must land.
             await db.SaveChangesAsync(CancellationToken.None);
             return TypedResults.NoContent();
+        }
+
+        /// <summary>
+        /// The providers the worker may use now, with their API keys: enabled, and within budget. A key
+        /// this server can't decrypt leaves its provider out.
+        /// </summary>
+        private static async Task<List<WorkerDescribeProvider>> DescribeProvidersAsync(
+            NunamDbContext db, SecretProtector secrets, ILogger<WorkerDescribeProvider> logger, CancellationToken cancellationToken)
+        {
+            var spend = await DescribeProviders.SpendAsync(db, cancellationToken);
+            var providers = await db.DescribeProviders.Where(p => p.Enabled).ToListAsync(cancellationToken);
+            var usable = new List<WorkerDescribeProvider>(providers.Count);
+            foreach (var p in providers)
+            {
+                var remaining = DescribeProviders.Remaining(p, spend.GetValueOrDefault(p.Id));
+                if (remaining is 0) continue;
+
+                string? apiKey = null;
+                if (p.ApiKeyProtected is { } stored && (apiKey = secrets.Unprotect(stored)) is null)
+                {
+                    logger.LogWarning("The API key of describe provider {Name} can't be decrypted with this server's secrets key", p.Name);
+                    continue;
+                }
+                usable.Add(new WorkerDescribeProvider(p.Id, p.Name, p.Kind, p.BaseUrl, apiKey, p.Model, p.Prompt,
+                    p.MaxOutputTokens, p.DisableReasoning, p.Priority, p.Concurrency, p.TakesOverflow,
+                    p.InputPricePerMillion, p.OutputPricePerMillion, remaining));
+            }
+            return usable;
+        }
+
+        private static async Task<Results<NoContent, NotFound>> ProviderStatusAsync(
+            Guid id, DescribeProviderStatus status, NunamDbContext db, CancellationToken cancellationToken)
+        {
+            var error = status.Error is { Length: > 1000 } e ? e[..1000] : status.Error;
+            var updated = await db.DescribeProviders.Where(p => p.Id == id)
+                .ExecuteUpdateAsync(p => p
+                    .SetProperty(x => x.LastError, error)
+                    .SetProperty(x => x.LastErrorAt, x => error == null ? x.LastErrorAt : DateTimeOffset.UtcNow), cancellationToken);
+            return updated == 0 ? TypedResults.NotFound() : TypedResults.NoContent();
         }
 
         private static async Task<Results<Ok<StaleRecovery>, ValidationProblem>> RecoverAsync(

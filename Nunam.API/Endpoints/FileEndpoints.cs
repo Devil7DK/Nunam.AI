@@ -34,7 +34,7 @@ namespace Nunam.API.Endpoints
                 .Select(f => new
                 {
                     f.Id, f.FileName, f.Path, Machine = f.Machine.Name, f.FileType, f.Extension, f.SizeBytes,
-                    f.FileCreatedAt, f.FileModifiedAt, f.IndexedAt, f.Description, f.Metadata,
+                    f.FileCreatedAt, f.FileModifiedAt, f.IndexedAt, f.Description, f.DescriptionModel, f.DescriptionProvider, f.DescribedAt, f.Metadata,
                     Content = f.Content!.Substring(0, MaxContentChars),
                     ContentLength = f.Content == null ? 0 : f.Content.Length,
                     HasPreview = f.PreviewImage != null,
@@ -47,6 +47,7 @@ namespace Nunam.API.Endpoints
             return TypedResults.Ok(new FileDetails(
                 file.Id, file.FileName, file.Path, file.Machine, file.FileType, file.Extension, file.SizeBytes,
                 file.FileCreatedAt, file.FileModifiedAt, file.IndexedAt, file.Description,
+                file.DescriptionModel, file.DescriptionProvider, file.DescribedAt,
                 file.Metadata is null ? null : JsonDocument.Parse(file.Metadata).RootElement.Clone(),
                 file.Content, file.ContentLength, file.ContentLength > MaxContentChars,
                 file.HasPreview, file.HasEmbedding));
