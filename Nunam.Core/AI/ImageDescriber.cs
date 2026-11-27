@@ -52,7 +52,8 @@ namespace Nunam.Core.AI
             if (text.Length == 0)
             {
                 throw new EmptyDescriptionException(
-                    $"{_model} returned no text (finish reason: {response.FinishReason?.ToString() ?? "none"}).");
+                    $"{_model} returned no text (finish reason: {response.FinishReason?.ToString() ?? "none"}).",
+                    response.Usage?.InputTokenCount ?? 0, response.Usage?.OutputTokenCount ?? 0);
             }
             return new DescribeOutcome(text, response.Usage?.InputTokenCount ?? 0, response.Usage?.OutputTokenCount ?? 0);
         }
@@ -60,6 +61,10 @@ namespace Nunam.Core.AI
         public void Dispose() => _client.Dispose();
     }
 
-    /// <summary>The model answered but wrote nothing, typically after spending its whole output on reasoning.</summary>
-    public class EmptyDescriptionException(string message) : Exception(message);
+    /// <summary>The model answered but wrote nothing, typically after spending its whole output on reasoning. Those tokens are billed all the same.</summary>
+    public class EmptyDescriptionException(string message, long inputTokens, long outputTokens) : Exception(message)
+    {
+        public long InputTokens { get; } = inputTokens;
+        public long OutputTokens { get; } = outputTokens;
+    }
 }

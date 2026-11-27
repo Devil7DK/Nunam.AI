@@ -78,8 +78,9 @@ namespace Nunam.Core.Agents
 
     /// <param name="QueueEmbed">Queue the file's Embed job, which a Describe job does once it is settled.</param>
     /// <param name="Usage">For a Describe job the worker sent to a provider: which one, and what it was billed.</param>
+    /// <param name="EmptyAttempts">Providers that answered this job with nothing before <paramref name="Usage"/>'s took it over.</param>
     public record WorkerJobResult(Guid Id, JobOutcome Outcome, string? Error, string? Description, float[]? Embedding, bool QueueEmbed,
-        DescribeUsageReport? Usage = null);
+        DescribeUsageReport? Usage = null, IReadOnlyList<DescribeUsageReport>? EmptyAttempts = null);
 
     public record DescribeUsageReport(Guid ProviderId, long InputTokens, long OutputTokens);
 
