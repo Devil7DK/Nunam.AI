@@ -54,6 +54,8 @@ services:
       AI__Provider: ${AI_PROVIDER}
       AI__BaseUrl: ${AI_BASE_URL}
       AI__EmbeddingModel: ${AI_EMBEDDING_MODEL}
+      # Encrypts describe providers' API keys in the database.
+      Secrets__Key: ${NUNAM_SECRETS_KEY:-}
       TZ: ${TZ}
     volumes:
       - ./packages:/packages:ro
@@ -88,7 +90,6 @@ services:
       Server__Token: ${NUNAM_WORKER_TOKEN}
       AI__Provider: ${AI_PROVIDER}
       AI__BaseUrl: ${AI_BASE_URL}
-      AI__ChatModel: ${AI_CHAT_MODEL}
       AI__EmbeddingModel: ${AI_EMBEDDING_MODEL}
       TZ: ${TZ}
     depends_on:

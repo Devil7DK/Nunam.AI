@@ -15,6 +15,8 @@ and `OLLAMA_HOST=0.0.0.0:11434` so other machines can reach it. Set `AI_BASE_URL
 
 The AI worker tolerates Ollama being unreachable: Describe and Embed jobs wait as `Pending` and resume when it's back. Search falls back to keywords meanwhile.
 
+Describing can also run on a cloud model instead of, or next to, Ollama; see [Describing with other models](#describing-with-other-models).
+
 ## 2. Start the stack
 
 ```bash
@@ -120,6 +122,24 @@ All state is in the `nunam_pgdata` volume. Everything in it can be rebuilt by re
 docker compose -f docker/docker-compose.yml exec -T postgres \
   pg_dump -U nunam -Fc nunam > nunam-$(date +%F).dump
 ```
+
+## Describing with other models
+
+Admins manage the models that describe images on the web UI's **AI** page. On the first start of this version, the server creates one provider, *Local Ollama* with `gemma4:12b-it-qat` at `AI_BASE_URL`, and credits it with the descriptions already written; `AI_CHAT_MODEL` is no longer read and can be removed from `.env`. More can be added: another Ollama server, or a cloud model through an OpenAI-compatible API (presets for Anthropic, OpenRouter and Gemini fill in the address and list prices).
+
+- **Priority and concurrency.** The AI worker uses the providers with the lowest priority number; equal numbers share the queue. *At a time* sets how many images a provider describes in parallel: 1 suits a single local GPU, 4 to 8 a cloud API.
+- **Backup or overflow.** A provider with a higher number is a backup: it describes only while every provider ahead of it is disabled, failing or over budget. With *Take overflow* it also describes while they are all busy, so a local GPU can work alongside a cloud model.
+- **Budgets.** Each provider's input and output prices (US$ per million tokens) turn the tokens each request was billed for into spend. A budget stops the provider once it has spent that much, either in total or in each calendar month; the next provider takes over. Spend is counted per day, so a budget can overshoot by the few requests in flight.
+- **Test** describes one random indexed image with the provider as saved and shows the text, tokens and cost; it counts toward the budget.
+- Every description records the model and provider that wrote it, shown under *What it shows* on the file and counted on the AI page. The search page's *AI description* filter lists files with or without one.
+
+Cloud APIs need a key, which the server stores encrypted with `NUNAM_SECRETS_KEY` from `.env`:
+
+```bash
+openssl rand -base64 32   # put it in .env as NUNAM_SECRETS_KEY, then: docker compose up -d
+```
+
+Keep that value: without it the stored keys can't be decrypted, and each provider's key has to be entered again. Only the AI worker receives the keys; the web UI shows whether one is stored, never the key. A cloud provider receives the preview of every file it describes, photos and scanned documents included.
 
 ## Changing the embedding model or prefixes
 

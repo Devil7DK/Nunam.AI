@@ -49,6 +49,8 @@ services:
       AI__Provider: ${AI_PROVIDER:-Ollama}
       AI__BaseUrl: ${AI_BASE_URL}
       AI__EmbeddingModel: ${AI_EMBEDDING_MODEL:-bge-m3}
+      # Encrypts describe providers' API keys in the database.
+      Secrets__Key: ${NUNAM_SECRETS_KEY:-}
     volumes:
       # The indexer packages the Add machine command downloads (build-packages.sh, build-msi.sh).
       - ../artifacts/packages:/packages:ro
@@ -84,7 +86,6 @@ services:
       Server__Token: ${NUNAM_WORKER_TOKEN}
       AI__Provider: ${AI_PROVIDER:-Ollama}
       AI__BaseUrl: ${AI_BASE_URL}
-      AI__ChatModel: ${AI_CHAT_MODEL:-gemma4:12b-it-qat}
       AI__EmbeddingModel: ${AI_EMBEDDING_MODEL:-bge-m3}
     depends_on:
       - nunam-api

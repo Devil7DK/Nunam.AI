@@ -7,7 +7,7 @@ The stack is `compose.yaml` beside this file. Its settings are in `.env`, which 
 | `nunam-ui` | the web UI, and the proxy to the API | `UI_HTTPS_PORT` (3443) and `UI_PORT` (3000, http) on the LAN |
 | `postgres` | the index: files, text, previews, vectors, accounts | inside the stack only, TLS only |
 | `nunam-api` | search, previews, sign-in, and what indexers and the AI worker call | inside the stack only, through `nunam-ui` |
-| `nunam-aiworker` | describes images and embeds files, with the Ollama server | nowhere; it takes jobs from the API |
+| `nunam-aiworker` | describes images with the providers on the AI page, and embeds files with the Ollama server | nowhere; it takes jobs from the API |
 | `migrations` | applies the schema, then exits | nowhere |
 
 Indexers on other machines reach the API through the UI's port, each with its own machine token; nothing else is published.
@@ -17,7 +17,7 @@ Indexers on other machines reach the API through the UI's port, each with its ow
 ```bash
 cd /srv/docker
 cp .env.example .env && chmod 600 .env
-# Fill in the two passwords, NUNAM_WORKER_TOKEN, AI_BASE_URL and TZ.
+# Fill in the two passwords, NUNAM_WORKER_TOKEN, NUNAM_SECRETS_KEY, AI_BASE_URL and TZ.
 docker compose up -d
 docker compose logs nunam-api | grep "setup code"
 ```
