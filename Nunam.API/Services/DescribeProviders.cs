@@ -59,39 +59,52 @@ namespace Nunam.API.Services
     /// <summary>
     /// On a server without describe providers, creates one from the <c>AI</c> settings, so the model
     /// that was describing images keeps doing so, and credits it with the descriptions it already wrote.
+    /// Runs beside startup rather than before it: crediting a large index takes a while.
     /// </summary>
     public sealed class DescribeProviderSeeder(IServiceScopeFactory scopes, IOptions<AIOptions> ai, ILogger<DescribeProviderSeeder> logger)
-        : IHostedService
+        : BackgroundService
     {
-        public async Task StartAsync(CancellationToken cancellationToken)
+        private const int CreditBatch = 5000;
+
+        protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
-            using var scope = scopes.CreateScope();
-            var db = scope.ServiceProvider.GetRequiredService<NunamDbContext>();
-            if (await db.DescribeProviders.AnyAsync(cancellationToken)) return;
-
-            var options = ai.Value;
-            var provider = new DescribeProvider
+            try
             {
-                Name = options.Provider == AIProvider.Ollama ? "Local Ollama" : "Local model",
-                Kind = options.Provider,
-                BaseUrl = options.BaseUrl,
-                Model = options.ChatModel,
-                Prompt = options.DescribePrompt == DescribePrompts.Default ? null : options.DescribePrompt,
-                MaxOutputTokens = options.MaxOutputTokens,
-                DisableReasoning = options.DisableReasoning,
-            };
-            db.DescribeProviders.Add(provider);
-            await db.SaveChangesAsync(cancellationToken);
+                using var scope = scopes.CreateScope();
+                var db = scope.ServiceProvider.GetRequiredService<NunamDbContext>();
+                if (await db.DescribeProviders.AnyAsync(stoppingToken)) return;
 
-            var credited = await db.Files
-                .Where(f => f.Description != null && f.DescriptionModel == null)
-                .ExecuteUpdateAsync(f => f
-                    .SetProperty(x => x.DescriptionModel, provider.Model)
-                    .SetProperty(x => x.DescriptionProvider, provider.Name), cancellationToken);
-            logger.LogInformation("Created describe provider {Name} ({Model}) from the AI settings; credited it with {Count} description(s)",
-                provider.Name, provider.Model, credited);
+                var options = ai.Value;
+                var provider = new DescribeProvider
+                {
+                    Name = options.Provider == AIProvider.Ollama ? "Local Ollama" : "Local model",
+                    Kind = options.Provider,
+                    BaseUrl = options.BaseUrl,
+                    Model = options.ChatModel,
+                    Prompt = options.DescribePrompt == DescribePrompts.Default ? null : options.DescribePrompt,
+                    MaxOutputTokens = options.MaxOutputTokens,
+                    DisableReasoning = options.DisableReasoning,
+                };
+                db.DescribeProviders.Add(provider);
+                await db.SaveChangesAsync(stoppingToken);
+                logger.LogInformation("Created describe provider {Name} ({Model}) from the AI settings", provider.Name, provider.Model);
+
+                var credited = 0;
+                int batch;
+                do
+                {
+                    batch = await db.Database.ExecuteSqlInterpolatedAsync($"""
+                        UPDATE files SET description_model = {provider.Model}, description_provider = {provider.Name}
+                        WHERE id IN (SELECT id FROM files WHERE description IS NOT NULL AND description_model IS NULL LIMIT {CreditBatch})
+                        """, stoppingToken);
+                    credited += batch;
+                } while (batch == CreditBatch);
+                logger.LogInformation("Credited {Name} with {Count} existing description(s)", provider.Name, credited);
+            }
+            catch (Exception ex) when (!stoppingToken.IsCancellationRequested)
+            {
+                logger.LogError(ex, "Could not set up the first describe provider; add one on the AI page");
+            }
         }
-
-        public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
     }
 }
