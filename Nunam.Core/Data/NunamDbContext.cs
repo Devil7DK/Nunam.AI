@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Nunam.Core.Entities;
 
 namespace Nunam.Core.Data
@@ -30,6 +30,7 @@ namespace Nunam.Core.Data
             base.OnModelCreating(model);
 
             model.HasPostgresExtension("vector");
+            model.HasPostgresExtension("pg_trgm");
 
             model.Entity<Machine>(e =>
             {
@@ -46,6 +47,8 @@ namespace Nunam.Core.Data
                 e.HasIndex(f => f.FileType);
                 e.HasIndex(f => f.FileModifiedAt);
                 e.HasIndex(f => f.Fts).HasMethod("gin");
+                // Substring matches on file names (ILIKE '%word%') in keyword search.
+                e.HasIndex(f => f.FileName).HasMethod("gin").HasOperators("gin_trgm_ops");
                 e.HasIndex(f => f.Embedding)
                     .HasMethod("hnsw")
                     .HasOperators("vector_cosine_ops");

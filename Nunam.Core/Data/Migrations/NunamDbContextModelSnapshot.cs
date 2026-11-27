@@ -22,6 +22,7 @@ namespace Nunam.Core.Data.Migrations
                 .HasAnnotation("ProductVersion", "10.0.8")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
+            NpgsqlModelBuilderExtensions.HasPostgresExtension(modelBuilder, "pg_trgm");
             NpgsqlModelBuilderExtensions.HasPostgresExtension(modelBuilder, "vector");
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
@@ -179,6 +180,12 @@ namespace Nunam.Core.Data.Migrations
 
                     b.HasIndex("FileModifiedAt")
                         .HasDatabaseName("ix_files_file_modified_at");
+
+                    b.HasIndex("FileName")
+                        .HasDatabaseName("ix_files_file_name");
+
+                    NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex("FileName"), "gin");
+                    NpgsqlIndexBuilderExtensions.HasOperators(b.HasIndex("FileName"), new[] { "gin_trgm_ops" });
 
                     b.HasIndex("FileType")
                         .HasDatabaseName("ix_files_file_type");
