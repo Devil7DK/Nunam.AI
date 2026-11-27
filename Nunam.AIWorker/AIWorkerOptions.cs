@@ -8,8 +8,14 @@ namespace Nunam.AIWorker
     {
         public const string SectionName = "AIWorker";
 
-        /// <summary>Describe jobs claimed per poll. LLaVA-style models process one image at a time, so 1 is the norm.</summary>
-        public int DescribeBatchSize { get; set; } = 1;
+        /// <summary>How often the describe providers are fetched again, picking up changes made in the web UI.</summary>
+        public int ProviderRefreshSeconds { get; set; } = 30;
+
+        /// <summary>
+        /// Longest wait for one description. A local model on a busy GPU can take minutes; past this
+        /// the job is retried.
+        /// </summary>
+        public int DescribeTimeoutSeconds { get; set; } = 300;
 
         /// <summary>Embed jobs claimed per poll. Embeddings batch well — many inputs go in a single request.</summary>
         public int EmbedBatchSize { get; set; } = 16;

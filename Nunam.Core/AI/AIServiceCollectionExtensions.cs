@@ -10,10 +10,9 @@ namespace Nunam.Core.AI
     public static class AIServiceCollectionExtensions
     {
         /// <summary>
-        /// Registers <see cref="IAIInferenceService"/> plus the underlying
-        /// <see cref="IChatClient"/> and <see cref="IEmbeddingGenerator{TInput,TEmbedding}"/>,
-        /// choosing the backend from the bound <see cref="AIOptions.Provider"/>. Switching
-        /// between Ollama and an OpenAI-compatible server (LM Studio) is config-only.
+        /// Registers <see cref="IAIInferenceService"/> and the underlying
+        /// <see cref="IEmbeddingGenerator{TInput,TEmbedding}"/>, choosing the backend from the bound
+        /// <see cref="AIOptions.Provider"/>.
         /// </summary>
         public static IServiceCollection AddNunamAI(
             this IServiceCollection services, IConfiguration configuration)
@@ -32,18 +31,13 @@ namespace Nunam.Core.AI
                             string.IsNullOrWhiteSpace(options.ApiKey) ? "not-needed" : options.ApiKey),
                         new OpenAIClientOptions { Endpoint = new Uri(options.BaseUrl) });
 
-                    services.AddChatClient(
-                        openAI.GetChatClient(options.ChatModel).AsIChatClient());
                     services.AddEmbeddingGenerator(
                         openAI.GetEmbeddingClient(options.EmbeddingModel).AsIEmbeddingGenerator());
                     break;
 
                 case AIProvider.Ollama:
                 default:
-                    // One client serves both roles; the model is selected per request.
-                    var ollama = new OllamaApiClient(new Uri(options.BaseUrl));
-                    services.AddChatClient(ollama);
-                    services.AddEmbeddingGenerator(ollama);
+                    services.AddEmbeddingGenerator(new OllamaApiClient(new Uri(options.BaseUrl)));
                     break;
             }
 

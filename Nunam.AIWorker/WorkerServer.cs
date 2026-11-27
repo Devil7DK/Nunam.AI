@@ -15,6 +15,12 @@ namespace Nunam.AIWorker
         public Task CompleteAsync(List<WorkerJobResult> results, CancellationToken ct) =>
             http.SendAsync(HttpMethod.Post, Base + "jobs/results", results, ct);
 
+        public Task<List<WorkerDescribeProvider>> DescribeProvidersAsync(CancellationToken ct) =>
+            http.SendAsync<List<WorkerDescribeProvider>>(HttpMethod.Get, Base + "describe-providers", null, ct);
+
+        public Task ReportProviderStatusAsync(Guid providerId, string? error, CancellationToken ct) =>
+            http.SendAsync(HttpMethod.Post, Base + $"describe-providers/{providerId}/status", new DescribeProviderStatus(error), ct);
+
         public Task<StaleRecovery> RecoverAsync(IndexJobKind kind, int staleMinutes, int maxAttempts, CancellationToken ct) =>
             http.SendAsync<StaleRecovery>(HttpMethod.Post, Base + "jobs/recover", new WorkerRecoverRequest(kind, staleMinutes, maxAttempts), ct);
     }

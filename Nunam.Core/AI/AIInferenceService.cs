@@ -5,13 +5,10 @@ using Pgvector;
 namespace Nunam.Core.AI
 {
     /// <summary>
-    /// Thin wrapper over the <c>Microsoft.Extensions.AI</c> <see cref="IChatClient"/> and
-    /// <see cref="IEmbeddingGenerator{TInput,TEmbedding}"/> abstractions. Model ids are
-    /// passed per-request from <see cref="AIOptions"/>, so a single underlying client can
-    /// serve both chat and embeddings regardless of provider.
+    /// Thin wrapper over the <c>Microsoft.Extensions.AI</c> <see cref="IEmbeddingGenerator{TInput,TEmbedding}"/>,
+    /// with the embedding model passed per request from <see cref="AIOptions"/>.
     /// </summary>
     public class AIInferenceService(
-        IChatClient chatClient,
         IEmbeddingGenerator<string, Embedding<float>> embeddingGenerator,
         IOptions<AIOptions> options) : IAIInferenceService
     {
@@ -38,31 +35,6 @@ namespace Nunam.Core.AI
                 cancellationToken);
 
             return [.. embeddings.Select(e => new Vector(e.Vector))];
-        }
-
-        public async Task<string> DescribeImageAsync(
-            ReadOnlyMemory<byte> image,
-            string mediaType,
-            string? prompt = null,
-            CancellationToken cancellationToken = default)
-        {
-            var message = new ChatMessage(ChatRole.User,
-            [
-                new TextContent(prompt ?? _options.DescribePrompt),
-                new DataContent(image, mediaType),
-            ]);
-
-            var response = await chatClient.GetResponseAsync(
-                [message],
-                new ChatOptions
-                {
-                    ModelId = _options.ChatModel,
-                    MaxOutputTokens = _options.MaxOutputTokens,
-                    Reasoning = _options.DisableReasoning ? new ReasoningOptions { Effort = ReasoningEffort.None } : null,
-                },
-                cancellationToken);
-
-            return response.Text;
         }
     }
 }

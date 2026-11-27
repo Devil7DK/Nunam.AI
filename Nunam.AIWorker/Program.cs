@@ -16,7 +16,7 @@ if (string.IsNullOrWhiteSpace(server.Token))
 }
 builder.Services.AddSingleton(new WorkerServer(AgentHttp.Create(server, TimeSpan.FromSeconds(100))));
 
-// IAIInferenceService + chat/embedding clients, backend chosen from the "AI" config section.
+// Embeddings, backend chosen from the "AI" config section. Describe providers come from the API.
 builder.Services.AddNunamAI(builder.Configuration);
 
 // Queue consumers.
