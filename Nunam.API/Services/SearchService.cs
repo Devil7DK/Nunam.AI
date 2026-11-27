@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Npgsql;
 using NpgsqlTypes;
@@ -155,18 +155,15 @@ namespace Nunam.API.Services
         private static string EscapeLike(string value) =>
             value.Replace(@"\", @"\\").Replace("%", @"\%").Replace("_", @"\_");
 
-        private const string FilteredCte = """
-            filtered AS (
-                SELECT f.id
-                FROM files f
-                JOIN machines m ON m.id = f.machine_id
-                WHERE (@file_type IS NULL OR f.file_type = @file_type)
+        // Plain conditions on files f rather than a semi-join against a filtered set: behind a semi-join
+        // the planner can't use the HNSW index, and measures the distance to every embedded file.
+        private const string FileFilter = """
+            (@file_type IS NULL OR f.file_type = @file_type)
                   AND (@machine_ids IS NULL OR f.machine_id = ANY(@machine_ids))
-                  AND (@machine IS NULL OR lower(m.name) = lower(@machine))
+                  AND (@machine IS NULL OR f.machine_id IN (SELECT id FROM machines WHERE lower(name) = lower(@machine)))
                   AND (@extensions IS NULL OR lower(f.extension) = ANY(@extensions))
                   AND (@from IS NULL OR f.file_modified_at >= @from)
                   AND (@to IS NULL OR f.file_modified_at < @to)
-            )
             """;
 
         private const string ResultColumns = """
@@ -180,23 +177,28 @@ namespace Nunam.API.Services
         // matches and ts_rank_cd puts files matching more of them first.
         //
         // A filename hit ranks above body-only hits: the parser keeps "deed.txt" as one token, so
-        // full-text search alone would miss a query for "deed".
+        // full-text search alone would miss a query for "deed". The two kinds of match are looked up
+        // separately, so each can use its index (GIN on fts, trigram on file_name); OR-ed together
+        // they need a scan of every row.
         private static readonly string SearchSql = $"""
-            WITH {FilteredCte},
-            terms AS (
+            WITH terms AS (
                 SELECT CASE WHEN @match_any
                             THEN coalesce(nullif(replace(plainto_tsquery('english', @q)::text, ' & ', ' | '), '')::tsquery, plainto_tsquery('english', @q))
                             ELSE websearch_to_tsquery('english', @q)
                        END AS query
+            ),
+            matches AS (
+                SELECT f.id FROM files f, terms WHERE @use_keyword AND f.fts @@ terms.query
+                UNION
+                SELECT f.id FROM files f WHERE @use_keyword AND f.file_name ILIKE @name_pattern
             ),
             keyword AS (
                 SELECT f.id,
                        row_number() OVER (ORDER BY (f.file_name ILIKE @name_pattern) DESC, ts_rank_cd(f.fts, query) DESC) AS rank
                 FROM files f
                 CROSS JOIN terms
-                WHERE @use_keyword
-                  AND f.id IN (SELECT id FROM filtered)
-                  AND (f.fts @@ query OR f.file_name ILIKE @name_pattern)
+                WHERE f.id IN (SELECT id FROM matches)
+                  AND {FileFilter}
                 ORDER BY rank
                 LIMIT @candidates
             ),
@@ -205,7 +207,7 @@ namespace Nunam.API.Services
                 FROM files f
                 WHERE @use_semantic
                   AND f.embedding IS NOT NULL
-                  AND f.id IN (SELECT id FROM filtered)
+                  AND {FileFilter}
                 ORDER BY f.embedding <=> @embedding
                 LIMIT @candidates
             ),
@@ -239,11 +241,10 @@ namespace Nunam.API.Services
             """;
 
         private static readonly string BrowseSql = $"""
-            WITH {FilteredCte},
-            page AS (
+            WITH page AS (
                 SELECT f.id, NULL::double precision AS score, NULL::double precision AS similarity, count(*) OVER () AS total
                 FROM files f
-                WHERE f.id IN (SELECT id FROM filtered)
+                WHERE {FileFilter}
                 ORDER BY f.file_modified_at DESC NULLS LAST, f.id
                 LIMIT @limit OFFSET @offset
             )
