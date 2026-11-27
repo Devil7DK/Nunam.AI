@@ -33,6 +33,13 @@ namespace Nunam.Indexer.Workers
         /// <summary>Results the server didn't take yet; sent before anything new is claimed.</summary>
         private readonly Queue<(Guid JobId, string Path, ParseResult Result)> _unsent = new();
 
+        // Media and document metadata can hold infinite or NaN numbers (a zero frame rate, a division by
+        // zero in a header), which plain JSON can't express; they go as strings rather than failing the file.
+        private static readonly JsonSerializerOptions MetadataOptions = new()
+        {
+            NumberHandling = System.Text.Json.Serialization.JsonNumberHandling.AllowNamedFloatingPointLiterals,
+        };
+
         protected override string Name => nameof(ParseWorker);
         protected override TimeSpan IdleInterval => TimeSpan.FromSeconds(_options.IdlePollSeconds);
         protected override TimeSpan MinBackoff => TimeSpan.FromSeconds(_options.MinBackoffSeconds);
@@ -88,6 +95,9 @@ namespace Nunam.Indexer.Workers
                     }
                 }
                 _unsent.Enqueue((job.Id, job.Path, result));
+                // Sent as each file finishes: results held until the end of the batch could make the
+                // server take the whole batch back as stale behind one slow file.
+                await SendUnsentAsync(CancellationToken.None);
             }
 
             // Not cancellable: finished parses must land even when shutdown starts mid-batch.
@@ -150,7 +160,7 @@ namespace Nunam.Indexer.Workers
             var file = new ParsedFile(
                 info.Name, info.Extension, info.Length, fileType, info.CreationTimeUtc, info.LastWriteTimeUtc,
                 content,
-                outcome.Metadata is { Count: > 0 } metadata ? JsonSerializer.Serialize(metadata) : null,
+                outcome.Metadata is { Count: > 0 } metadata ? JsonSerializer.Serialize(metadata, MetadataOptions) : null,
                 outcome.PreviewImage,
                 outcome.NeedsDescribe);
 
