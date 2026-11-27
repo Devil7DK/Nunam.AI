@@ -16,6 +16,7 @@ const types: { value: FileType | ''; label: string }[] = [
 ];
 
 const ALL_MACHINES = '__all__';
+const ANY_DESCRIPTION = '__any__';
 
 interface Props {
   filters: Filters;
@@ -32,7 +33,7 @@ function Label({ children, htmlFor }: { children: React.ReactNode; htmlFor?: str
 }
 
 export function FilterPanel({ filters, machines, onChange }: Props) {
-  const active = filters.type || filters.machine || filters.ext || filters.from || filters.to;
+  const active = filters.type || filters.machine || filters.ext || filters.from || filters.to || filters.described;
 
   return (
     <div className="flex flex-col gap-5">
@@ -108,12 +109,29 @@ export function FilterPanel({ filters, machines, onChange }: Props) {
         </div>
       </div>
 
+      <div>
+        <Label htmlFor="filter-described">AI description</Label>
+        <Select
+          value={filters.described || ANY_DESCRIPTION}
+          onValueChange={(value) => onChange({ described: value === ANY_DESCRIPTION ? '' : (value as 'with' | 'without') })}
+        >
+          <SelectTrigger id="filter-described" className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ANY_DESCRIPTION}>Any</SelectItem>
+            <SelectItem value="with">Has a description</SelectItem>
+            <SelectItem value="without">No description yet</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
       {active && (
         <Button
           variant="ghost"
           size="sm"
           className="self-start text-muted-foreground"
-          onClick={() => onChange({ type: '', machine: '', ext: '', from: '', to: '' })}
+          onClick={() => onChange({ type: '', machine: '', ext: '', from: '', to: '', described: '' })}
         >
           Clear filters
         </Button>

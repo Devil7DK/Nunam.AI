@@ -126,6 +126,13 @@ export function PreviewModal({ result, onClose }: { result: SearchResult | null;
                     <section>
                       <h3 className="mb-1 text-xs font-medium tracking-wide text-muted-foreground uppercase">What it shows</h3>
                       <p className="text-sm leading-relaxed">{details.description}</p>
+                      {details.descriptionModel && (
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Written by {details.descriptionModel}
+                          {details.descriptionProvider && ` through ${details.descriptionProvider}`}
+                          {details.describedAt && `, ${formatDateTime(details.describedAt)}`}
+                        </p>
+                      )}
                     </section>
                   )}
 

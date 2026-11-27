@@ -9,9 +9,11 @@ export interface Filters {
   ext: string;
   from: string;
   to: string;
+  /** AI description: any, with or without. */
+  described: '' | 'with' | 'without';
 }
 
-const defaults: Filters = { q: '', mode: 'hybrid', type: '', machine: '', ext: '', from: '', to: '' };
+const defaults: Filters = { q: '', mode: 'hybrid', type: '', machine: '', ext: '', from: '', to: '', described: '' };
 const modes: SearchMode[] = ['hybrid', 'keyword', 'semantic'];
 const types: FileType[] = ['document', 'image', 'audio', 'video', 'other'];
 
@@ -27,6 +29,9 @@ function read(): Filters {
     ext: params.get('ext') ?? '',
     from: params.get('from') ?? '',
     to: params.get('to') ?? '',
+    described: params.get('described') === 'with' || params.get('described') === 'without'
+      ? (params.get('described') as 'with' | 'without')
+      : '',
   };
 }
 

@@ -9,6 +9,8 @@ export interface SearchParams {
   ext?: string;
   from?: string;
   to?: string;
+  /** Only files with (true) or without (false) an AI description. */
+  described?: boolean;
   limit?: number;
   offset?: number;
 }
@@ -25,6 +27,7 @@ export interface SearchResult {
   /** Matched words are wrapped in U+E000 … U+E001. */
   snippet: string | null;
   description: string | null;
+  descriptionModel: string | null;
   hasPreview: boolean;
   score: number | null;
   similarity: number | null;
@@ -50,6 +53,9 @@ export interface FileDetails {
   modifiedAt: string | null;
   indexedAt: string;
   description: string | null;
+  descriptionModel: string | null;
+  descriptionProvider: string | null;
+  describedAt: string | null;
   metadata: Record<string, unknown> | null;
   content: string | null;
   contentLength: number;
@@ -386,3 +392,83 @@ export const createEnrollment = (body: { machineId?: string; name?: string }) =>
 export const getEnrollment = (id: string, signal?: AbortSignal) =>
   getJson<EnrollmentState>(`/api/machines/enrollments/${id}`, signal);
 export const deleteMachine = (machineId: string) => send('DELETE', `/api/machines/${machineId}`);
+
+export type AIProviderKind = 'ollama' | 'openAICompatible';
+export type BudgetPeriod = 'total' | 'monthly';
+
+export interface DescribeProvider {
+  id: string;
+  name: string;
+  kind: AIProviderKind;
+  baseUrl: string;
+  hasApiKey: boolean;
+  model: string;
+  prompt: string | null;
+  maxOutputTokens: number;
+  disableReasoning: boolean;
+  priority: number;
+  concurrency: number;
+  takesOverflow: boolean;
+  enabled: boolean;
+  inputPricePerMillion: number;
+  outputPricePerMillion: number;
+  budgetUsd: number | null;
+  budgetPeriod: BudgetPeriod;
+  spentThisPeriod: number;
+  spentTotal: number;
+  requestsToday: number;
+  failuresToday: number;
+  lastUsedAt: string | null;
+  lastError: string | null;
+  lastErrorAt: string | null;
+  status: 'ok' | 'disabled' | 'budget' | 'error';
+}
+
+export interface AISettings {
+  embedding: { provider: AIProviderKind; baseUrl: string; model: string; dimensions: number };
+  /** The server can store API keys (it has a secrets key). */
+  secretsConfigured: boolean;
+  defaultPrompt: string;
+  shortPrompt: string;
+  providers: DescribeProvider[];
+  queue: { pending: number; processing: number; done: number; failed: number };
+  describedBy: { model: string | null; provider: string | null; files: number }[];
+}
+
+export interface DescribeProviderInput {
+  name: string;
+  kind: AIProviderKind;
+  baseUrl: string;
+  /** Leave out (undefined) to keep the stored key; an empty string removes it. */
+  apiKey?: string;
+  model: string;
+  prompt: string | null;
+  maxOutputTokens: number;
+  disableReasoning: boolean;
+  priority: number;
+  concurrency: number;
+  takesOverflow: boolean;
+  enabled: boolean;
+  inputPricePerMillion: number;
+  outputPricePerMillion: number;
+  budgetUsd: number | null;
+  budgetPeriod: BudgetPeriod;
+}
+
+export interface DescribeTestResult {
+  fileName: string;
+  path: string;
+  text: string | null;
+  error: string | null;
+  inputTokens: number;
+  outputTokens: number;
+  costUsd: number;
+  seconds: number;
+}
+
+export const getAISettings = (signal?: AbortSignal) => getJson<AISettings>('/api/ai', signal);
+export const createDescribeProvider = (body: DescribeProviderInput) => send<DescribeProvider>('POST', '/api/ai/providers', body);
+export const updateDescribeProvider = (id: string, body: DescribeProviderInput) =>
+  send<DescribeProvider>('PUT', `/api/ai/providers/${id}`, body);
+export const deleteDescribeProvider = (id: string) => send('DELETE', `/api/ai/providers/${id}`);
+export const testDescribeProvider = (id: string) => send<DescribeTestResult>('POST', `/api/ai/providers/${id}/test`);

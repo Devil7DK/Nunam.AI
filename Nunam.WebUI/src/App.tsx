@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Server, SlidersHorizontal } from 'lucide-react';
+import { Server, SlidersHorizontal, Sparkles } from 'lucide-react';
 import { getMachines, getStatus, type IndexStatus, type MachineSummary, type SearchResult } from '@/api/nunam';
+import { useAuth } from '@/auth/context';
+import { AIPage } from '@/components/ai/AIPage';
 import { AccountMenu } from '@/components/AccountMenu';
 import { FilterPanel } from '@/components/FilterPanel';
 import { IndexStatusDialog } from '@/components/IndexStatusDialog';
@@ -21,6 +23,7 @@ const STATUS_REFRESH_MS = 60_000;
 
 export default function App() {
   const [route, navigate] = useRoute();
+  const { user } = useAuth();
   const [theme, setTheme] = useTheme();
   const [filters, setFilters] = useUrlState();
   const [machines, setMachines] = useState<MachineSummary[]>([]);
@@ -41,8 +44,9 @@ export default function App() {
       ext: ext || undefined,
       from: filters.from || undefined,
       to: filters.to || undefined,
+      described: filters.described ? filters.described === 'with' : undefined,
     }),
-    [query, filters.mode, filters.type, filters.machine, ext, filters.from, filters.to],
+    [query, filters.mode, filters.type, filters.machine, ext, filters.from, filters.to, filters.described],
   );
   const search = useSearch(params);
 
@@ -59,19 +63,25 @@ export default function App() {
     };
   }, []);
 
-  const activeFilters = [filters.type, filters.machine, filters.ext, filters.from, filters.to].filter(Boolean).length;
+  const activeFilters = [filters.type, filters.machine, filters.ext, filters.from, filters.to, filters.described].filter(Boolean).length;
   const headerActions = (
     <>
       <Button variant="ghost" size="sm" onClick={() => navigate('/machines')} aria-current={route.page === 'machines' ? 'page' : undefined}>
         <Server />
         <span className="hidden sm:inline">Machines</span>
       </Button>
+      {user.role === 'admin' && (
+        <Button variant="ghost" size="sm" onClick={() => navigate('/ai')} aria-current={route.page === 'ai' ? 'page' : undefined}>
+          <Sparkles />
+          <span className="hidden sm:inline">AI</span>
+        </Button>
+      )}
       <ThemeToggle theme={theme} onChange={setTheme} />
       <AccountMenu />
     </>
   );
 
-  if (route.page === 'machines') {
+  if (route.page === 'machines' || route.page === 'ai') {
     return (
       <div className="min-h-svh bg-background text-foreground">
         <header className="sticky top-0 z-20 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
@@ -81,7 +91,11 @@ export default function App() {
             {headerActions}
           </div>
         </header>
-        <MachinesPage machineId={route.machineId} onNavigate={navigate} />
+        {route.page === 'machines'
+          ? <MachinesPage machineId={route.machineId} onNavigate={navigate} />
+          : user.role === 'admin'
+            ? <AIPage onNavigate={(path) => { window.location.href = path; }} />
+            : <p className="mx-auto max-w-4xl px-4 py-6 text-sm text-muted-foreground">Only admins can see the AI settings.</p>}
       </div>
     );
   }

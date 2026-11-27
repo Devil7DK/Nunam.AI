@@ -12,7 +12,7 @@ export function Field({ label, error, hint, ...input }: Props) {
   const id = useId();
   const describedBy = error ? `${id}-error` : hint ? `${id}-hint` : undefined;
   return (
-    <div className="grid gap-1.5">
+    <div className="grid content-start gap-1.5">
       <Label htmlFor={id}>{label}</Label>
       <Input id={id} aria-invalid={error ? true : undefined} aria-describedby={describedBy} {...input} />
       {error ? (
